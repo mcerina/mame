@@ -234,6 +234,12 @@ void vlm5030_device::device_start()
 	save_item(NAME(m_target_energy));
 	save_item(NAME(m_target_pitch));
 	save_item(NAME(m_target_k));
+	save_item(NAME(m_new_energy));
+	save_item(NAME(m_new_pitch));
+	save_item(NAME(m_new_k));
+	save_item(NAME(m_current_energy));
+	save_item(NAME(m_current_pitch));
+	save_item(NAME(m_current_k));
 	save_item(NAME(m_x));
 }
 
@@ -264,16 +270,8 @@ void vlm5030_device::device_reset()
 
 void vlm5030_device::device_post_load()
 {
-	int interp_effect = FR_SIZE - (m_interp_count%FR_SIZE);
 	/* restore parameter data */
 	setup_parameter(m_parameter);
-
-	/* restore current energy,pitch & filter */
-	m_current_energy = m_old_energy + (m_target_energy - m_old_energy) * interp_effect / FR_SIZE;
-	if (m_old_pitch > 1)
-		m_current_pitch = m_old_pitch + (m_target_pitch - m_old_pitch) * interp_effect / FR_SIZE;
-	for (int i = 0; i <= 9; i++)
-		m_current_k[i] = m_old_k[i] + (m_target_k[i] - m_old_k[i]) * interp_effect / FR_SIZE;
 }
 
 void vlm5030_device::rom_bank_pre_change()
