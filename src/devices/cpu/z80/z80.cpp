@@ -692,6 +692,8 @@ void z80_device::device_start()
 	IX = 0;
 	IY = 0;
 	WZ = 0;
+	m_shared_data.w = 0;
+	m_shared_data2.w = 0;
 	m_af2.w = 0;
 	m_bc2.w = 0;
 	m_de2.w = 0;
