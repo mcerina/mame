@@ -429,6 +429,8 @@ void skykid_state::machine_start()
 	m_rombank->configure_entries(0, 2, memregion("maincpu")->base() + 0x10000, 0x2000);
 
 	save_item(NAME(m_inputport_selected));
+	save_item(NAME(m_main_irq_mask));
+	save_item(NAME(m_mcu_irq_mask));
 }
 
 
