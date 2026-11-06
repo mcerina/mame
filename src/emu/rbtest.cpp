@@ -310,6 +310,9 @@ void rollback_tester::apply_frame_to_ports(s64 frame)
 	}
 	for (int p = 0; p < MAXP; p++)
 		r.used[p] = best(p, frame);
+	// custom port handlers may have side effects (e.g. s1945's mcu_status_r
+	// toggles on every read): this read is ours, not the emulated machine's
+	auto dis = m_machine.disable_side_effects();
 	for (size_t i = 0; i < m_ports.size(); i++)
 	{
 		ioport_port &port = *m_ports[i];
