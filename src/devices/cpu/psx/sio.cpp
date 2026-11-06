@@ -40,11 +40,6 @@ psxsio_device::psxsio_device(const machine_config &mconfig, device_type type, co
 {
 }
 
-void psxsio_device::device_post_load()
-{
-	sio_timer_adjust();
-}
-
 void psxsio_device::device_start()
 {
 	m_timer = timer_alloc(FUNC( psxsio_device::sio_tick ), this);

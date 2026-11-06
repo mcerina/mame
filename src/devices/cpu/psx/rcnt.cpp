@@ -27,12 +27,6 @@ void psxrcnt_device::device_reset()
 {
 }
 
-void psxrcnt_device::device_post_load()
-{
-	for (int n = 0; n < 3; n++)
-		root_timer_adjust(n);
-}
-
 void psxrcnt_device::device_start()
 {
 	save_item(STRUCT_MEMBER(root_counter, n_count));

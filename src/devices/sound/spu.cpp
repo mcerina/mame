@@ -985,7 +985,6 @@ void spu_device::device_start()
 	save_item(NAME(m_decoded_data_size));
 	save_item(NAME(m_fifo));
 	save_item(NAME(m_fifo_ptr));
-	save_item(NAME(m_packet));
 	save_item(NAME(m_voice_active));
 	save_item(NAME(taddr));
 
@@ -1077,7 +1076,6 @@ void spu_device::device_post_load()
 	update_reverb();
 	update_key();
 	update_voice_state();
-	update_irq_event();
 }
 
 //
