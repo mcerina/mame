@@ -175,6 +175,10 @@ void opz_registers::save_restore(ymfm_saved_state &state)
 	state.save_restore(m_noise_lfo);
 	state.save_restore(m_regdata);
 	state.save_restore(m_phase_substep);
+
+	// the noise LFO waveform is filled in as the LFOs run (see
+	// clock_noise_and_lfo), so it is state rather than a constant table
+	state.save_restore(m_lfo_waveform[3]);
 }
 
 

@@ -255,6 +255,9 @@ public:
 	// prepare prior to clocking
 	bool prepare();
 
+	// recompute the register cache only (after restoring a saved state)
+	void refresh_cache() { m_regs.cache_channel_data(m_choffs, m_cache); }
+
 	// master clocking function
 	void clock(uint32_t env_counter);
 

@@ -610,12 +610,22 @@ void pcm_engine::reset()
 
 void pcm_engine::save_restore(ymfm_saved_state &state)
 {
-	// save our data
+	// save our data; the prepare bookkeeping is state too, since
+	// prepare() acts on the channels (key state, direct total level)
 	state.save_restore(m_env_counter);
+	state.save_restore(m_modified_channels);
+	state.save_restore(m_active_channels);
+	state.save_restore(m_prepare_count);
+	m_regs.save_restore(state);
 
 	// save channel state
 	for (int chnum = 0; chnum < CHANNELS; chnum++)
 		m_channel[chnum]->save_restore(state);
+
+	// the channel caches are derived from the registers
+	if (!state.saving())
+		for (int chnum = 0; chnum < CHANNELS; chnum++)
+			m_channel[chnum]->refresh_cache();
 }
 
 
