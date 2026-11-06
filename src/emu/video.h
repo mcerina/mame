@@ -44,6 +44,7 @@ public:
 	// getters
 	running_machine &machine() const { return m_machine; }
 	bool skip_this_frame() const { return m_skipping_this_frame; }
+	void set_resimulating(bool resim) { if (resim && !m_resimulating) { m_resim_saved_skip = m_skipping_this_frame; m_skipping_this_frame = true; } else if (!resim && m_resimulating) m_skipping_this_frame = m_resim_saved_skip; m_resimulating = resim; }
 	int speed_factor() const { return m_speed; }
 	int frameskip() const { return m_auto_frameskip ? -1 : m_frameskip_level; }
 	bool throttled() const { return m_throttled; }
@@ -150,6 +151,8 @@ private:
 	u8                  m_frameskip_counter;        // counter that counts through the frameskip steps
 	s8                  m_frameskip_adjust;
 	bool                m_skipping_this_frame;      // flag: true if we are skipping the current frame
+	bool                m_resimulating = false;     // rollback resimulation: no draw, UI, OSD, throttle
+	bool                m_resim_saved_skip = false;
 	osd_ticks_t         m_average_oversleep;        // average number of ticks the OSD oversleeps
 
 	// snapshot stuff

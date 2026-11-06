@@ -64,6 +64,7 @@
 #include "wavwrite.h"
 #include "interface/audio.h"
 
+#include <atomic>
 #include <string>
 #include <string_view>
 #include <tuple>
@@ -97,6 +98,8 @@ class sound_manager
 	static const attotime STREAMS_UPDATE_ATTOTIME;
 
 public:
+	void set_discard_output(bool discard) { m_discard_output = discard; }
+
 	using sample_t = sound_stream::sample_t;
 
 	enum {
@@ -209,6 +212,8 @@ public:
 	void set_resampler_hq_phases(u32 phases);
 
 private:
+	std::atomic<bool> m_discard_output = false;     // rollback resimulation: drop samples sent to the OSD
+
 	struct effect_step {
 		std::unique_ptr<audio_effect> m_effect;
 		emu::detail::output_buffer_flat<sample_t> m_buffer;

@@ -215,6 +215,13 @@ void video_manager::set_frameskip(int frameskip)
 
 void video_manager::frame_update(bool from_debugger)
 {
+	// rollback resimulation: only the per-frame notifiers (input sampling) run
+	if (m_resimulating && !from_debugger)
+	{
+		machine().call_notifiers(MACHINE_NOTIFY_FRAME);
+		return;
+	}
+
 	// only render sound and video if we're in the running phase
 	machine_phase const phase = machine().phase();
 	bool skipped_it = m_skipping_this_frame;

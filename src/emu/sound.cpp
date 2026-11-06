@@ -482,7 +482,7 @@ void sound_manager::run_effects()
 
 		// Send the result to the osd
 		for(auto &stream : m_osd_output_streams)
-			if(stream.m_samples)
+			if(stream.m_samples && !m_discard_output)
 				machine().osd().sound_stream_sink_update(stream.m_id, stream.m_buffer.data(), stream.m_samples);
 
 		machine().osd().sound_end_update();
