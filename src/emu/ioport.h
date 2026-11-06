@@ -900,6 +900,9 @@ public:
 	void read(ioport_value &result);
 	void write(ioport_value newval);
 
+	// save state: the last value delivered drives edge detection
+	void register_save(save_manager &save, const char *tag, int index);
+
 private:
 	// internal state
 	ioport_field &          m_field;            // reference to the input field

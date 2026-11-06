@@ -1851,6 +1851,18 @@ time_t ioport_manager::initialize()
 	for (auto &port : m_portlist)
 		port.second->init_live_state();
 
+	// the values last driven onto device lines are machine state: without them
+	// a save state load leaves edge detection in dynamic_field::write out of
+	// step with the devices, and the next write can lose or invent an edge
+	for (auto &port : m_portlist)
+	{
+		ioport_port_live &live = port.second->live();
+		machine().save().save_item(nullptr, "ioport", port.first.c_str(), 0, live.outputvalue, "outputvalue");
+		int index = 0;
+		for (dynamic_field &dynfield : live.writelist)
+			dynfield.register_save(machine().save(), port.first.c_str(), index++);
+	}
+
 	// handle autoselection of devices
 	init_autoselect_devices({ IPT_AD_STICK_X,  IPT_AD_STICK_Y,   IPT_AD_STICK_Z }, OPTION_ADSTICK_DEVICE,    "analog joystick");
 	init_autoselect_devices({ IPT_PADDLE,      IPT_PADDLE_V },                     OPTION_PADDLE_DEVICE,     "paddle");
@@ -3542,6 +3554,18 @@ void dynamic_field::write(ioport_value newval)
 			m_oldval = newval;
 		}
 	}
+}
+
+
+//-------------------------------------------------
+//  register_save - the last value delivered to
+//  the write callback is machine state (it drives
+//  edge detection), so it belongs in save states
+//-------------------------------------------------
+
+void dynamic_field::register_save(save_manager &save, const char *tag, int index)
+{
+	save.save_item(nullptr, "ioport_write", tag, index, NAME(m_oldval));
 }
 
 
