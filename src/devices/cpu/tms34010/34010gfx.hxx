@@ -1286,6 +1286,7 @@ void FUNCTION_NAME(tms340x0_device::pixblt)(int src_is_linear, int dst_is_linear
 	else
 	{
 		m_icount -= m_gfxcycles;
+		m_gfxcycles = 0; // leftover depends on timeslicing only, keep the state canonical
 		m_st &= ~STBIT_P;
 		if (src_is_linear && dst_is_linear)
 			SADDR() += DYDX_Y() * SPTCH();
@@ -1566,6 +1567,7 @@ if ((daddr & (BITS_PER_PIXEL - 1)) != 0) osd_printf_debug("PIXBLT_R%d with odd d
 	else
 	{
 		m_icount -= m_gfxcycles;
+		m_gfxcycles = 0; // leftover depends on timeslicing only, keep the state canonical
 		m_st &= ~STBIT_P;
 		if (src_is_linear && dst_is_linear)
 			SADDR() += DYDX_Y() * SPTCH();
@@ -1785,6 +1787,7 @@ void FUNCTION_NAME(tms340x0_device::pixblt_b)(int dst_is_linear)
 	else
 	{
 		m_icount -= m_gfxcycles;
+		m_gfxcycles = 0; // leftover depends on timeslicing only, keep the state canonical
 		m_st &= ~STBIT_P;
 		SADDR() += DYDX_Y() * SPTCH();
 		if (dst_is_linear)
@@ -1967,6 +1970,7 @@ void FUNCTION_NAME(tms340x0_device::fill)(int dst_is_linear)
 	else
 	{
 		m_icount -= m_gfxcycles;
+		m_gfxcycles = 0; // leftover depends on timeslicing only, keep the state canonical
 		m_st &= ~STBIT_P;
 		if (dst_is_linear)
 			DADDR() += DYDX_Y() * DPTCH();
