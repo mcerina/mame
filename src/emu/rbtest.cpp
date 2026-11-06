@@ -15,7 +15,6 @@
 
 #include <algorithm>
 #include <cstdlib>
-#include <map>
 #include <sstream>
 #include <string_view>
 
@@ -64,6 +63,7 @@ rollback_tester::rollback_tester(running_machine &machine, const std::string &co
 		std::string k = kv.substr(0, eq), v = kv.substr(eq + 1);
 		if (k == "mode") m_mode = (v == "rollback") ? mode::ROLLBACK : (v == "saveall") ? mode::SAVEALL : (v == "synctest") ? mode::SYNCTEST : mode::PLAIN;
 		else if (k == "check") m_check = std::max(1, std::stoi(v));
+		else if (k == "draw") m_resim_draw = std::stoi(v) != 0;
 		else if (k == "tapframe") m_tapframe = std::stoll(v);
 		else if (k == "players") m_players = std::clamp(std::stoi(v), 1, MAXP);
 		else if (k == "latency") m_latency = std::stoi(v);
@@ -140,51 +140,39 @@ rollback_tester::rollback_tester(running_machine &machine, const std::string &co
 		m_last_arrival[p] = 0;
 	}
 
+	// walk the save state layout: write it out (to attribute a divergence to a
+	// named item) and collect the items the desync hash ignores, by category:
+	// - state derived from drawing (tilemaps, screen bookkeeping, plus driver
+	//   items named with exclude=), not updated while resimulating
+	// - frontend state (the Lua engine re-arms its own timer on load)
+	FILE *lay = m_out.empty() ? nullptr : std::fopen((m_out + ".layout.tsv").c_str(), "w");
+	size_t off = 32; // HEADER_SIZE in save.cpp
+	void *base;
+	u32 valsize, valcount, blockcount, stride;
+	for (int i = 0; ; i++)
+	{
+		const char *name = machine.save().indexed_item(i, base, valsize, valcount, blockcount, stride);
+		if (!name)
+			break;
+		const size_t sz = size_t(valsize) * valcount * blockcount;
+		if (lay)
+			std::fprintf(lay, "%zu\t%zu\t%s\n", off, sz, name);
+		const std::string_view n(name);
+		bool skip = n.substr(0, 8) == "tilemap/" || n.substr(0, 13) == "Video Screen/" || n.find("lua_engine") != std::string_view::npos;
+		for (auto &e : m_exclude)
+			skip = skip || n.find(e) != std::string_view::npos;
+		if (skip)
+			m_hash_skip.emplace_back(off, sz);
+		off += sz;
+	}
+	if (lay)
+		std::fclose(lay);
+
 	if (!m_out.empty())
 	{
 		m_hashlog = std::fopen((m_out + ".hash.csv").c_str(), "w");
 		if (m_mode == mode::SYNCTEST)
 			m_stlog = std::fopen((m_out + ".synctest.txt").c_str(), "w");
-
-		// save state layout, to attribute any divergence to a named item
-		FILE *lay = std::fopen((m_out + ".layout.tsv").c_str(), "w");
-		std::map<std::string, std::array<size_t, 5>> timers;
-		if (lay)
-		{
-			size_t off = 32; // HEADER_SIZE in save.cpp
-			void *base;
-			u32 valsize, valcount, blockcount, stride;
-			for (int i = 0; ; i++)
-			{
-				const char *name = machine.save().indexed_item(i, base, valsize, valcount, blockcount, stride);
-				if (!name)
-					break;
-				size_t sz = size_t(valsize) * valcount * blockcount;
-				std::fprintf(lay, "%zu\t%zu\t%s\n", off, sz, name);
-				std::string_view n(name);
-				if (n.substr(0, 6) == "timer/")
-				{
-					auto slash = n.rfind('/');
-					std::string prefix(n.substr(0, slash));
-					if (n.substr(slash) == "/m_enabled") timers[prefix][1] = off;
-					else if (n.substr(slash) == "/m_index") timers[prefix][0] = off;
-					else if (n.substr(slash) == "/m_expire.seconds") timers[prefix][2] = off;
-					else if (n.substr(slash) == "/m_start.attoseconds") timers[prefix][3] = off;
-					else if (n.substr(slash) == "/m_start.seconds") timers[prefix][4] = off;
-				}
-				else if (n.size() > 20 && n.substr(n.size() - 20) == "/m_last_partial_scan")
-					m_zero_norm.emplace_back(off, sz);
-				bool excluded = false;
-				for (auto &e : m_exclude) if (n.find(e) != std::string_view::npos) excluded = true;
-				if (excluded || n.substr(0, 8) == "tilemap/" || n.substr(0, 13) == "Video Screen/")
-					m_video_norm.emplace_back(off, sz);
-				off += sz;
-			}
-			std::fclose(lay);
-		}
-		for (auto &t : timers)
-			if (t.second[0] && t.second[1] && t.second[2] && t.second[3] && t.second[4])
-				m_timer_norm.push_back(t.second);
 	}
 
 	if (m_tapframe >= 0)
@@ -200,7 +188,6 @@ rollback_tester::rollback_tester(running_machine &machine, const std::string &co
 		}
 	}
 
-	osd_printf_info("rbtest: norm timers=%u zero=%u video=%u\n", unsigned(m_timer_norm.size()), unsigned(m_zero_norm.size()), unsigned(m_video_norm.size()));
 	osd_printf_info("rbtest: mode=%d players=%d latency=%d jitter=%d delay=%d window=%d frames=%d state=%u bytes, %u player fields in %u ports\n",
 			int(m_mode), m_players, m_latency, m_jitter, m_delay, m_window, int(m_frames), unsigned(m_state_size), unsigned(m_fieldcount), unsigned(m_ports.size()));
 	m_run_start = m_frame_start = clk::now();
@@ -364,91 +351,54 @@ bool rollback_tester::load_slot(s64 frame)
 	return ok;
 }
 
-u64 rollback_tester::hash_logic()
+// hash of a save state without the items in m_hash_skip
+u64 rollback_tester::state_hash(const std::vector<u8> &state)
 {
-	// call right after hash_buffer(): m_scratch holds the canonical state
-	for (auto &z : m_video_norm)
+	m_scratch = state;
+	for (auto &z : m_hash_skip)
 		memset(&m_scratch[z.first], 0, z.second);
-	return hash_raw(m_scratch);
-}
-
-u64 rollback_tester::hash_buffer(const std::vector<u8> &src)
-{
-	// m_index of a timer that cannot fire is just its position in the
-	// scheduler list, which depends on allocation order/addresses (ASLR):
-	// normalise it so equal emulation states hash equal
-	m_scratch = src;
-	std::vector<u8> &buf = m_scratch;
-	for (auto &t : m_timer_norm)
-	{
-		s32 secs;
-		memcpy(&secs, &buf[t[2]], 4);
-		if (!buf[t[1]] || secs >= ATTOTIME_MAX_SECONDS)
-		{
-			// a timer that cannot fire: list position, enable flag and start
-			// time do not influence emulation (e.g. lua_engine resets its own
-			// timer in postload)
-			memset(&buf[t[0]], 0, 4);
-			buf[t[1]] = 0;
-			memset(&buf[t[3]], 0, 8);
-			memset(&buf[t[4]], 0, 4);
-		}
-	}
-	// screen partial-update bookkeeping is left behind by skipped draws during
-	// resimulation and reset at the start of every frame: video only
-	for (auto &z : m_zero_norm)
-		memset(&buf[z.first], 0, z.second);
-	return hash_raw(buf);
-}
-
-u64 rollback_tester::hash_raw(const std::vector<u8> &buf)
-{
 	u64 h = 0x84222325cbf29ce4ULL;
-	size_t n = buf.size() / 8;
-	const u8 *p = buf.data();
+	const size_t n = m_scratch.size() / 8;
+	const u8 *p = m_scratch.data();
 	for (size_t i = 0; i < n; i++, p += 8)
 	{
 		u64 w;
 		memcpy(&w, p, 8);
-		h = (h ^ (w * 0x9e3779b97f4a7c15ULL));
+		h ^= w * 0x9e3779b97f4a7c15ULL;
 		h = ((h << 31) | (h >> 33)) * 0xc2b2ae3d27d4eb4fULL;
 	}
-	for (size_t i = n * 8; i < buf.size(); i++)
-		h = (h ^ buf[i]) * 0x100000001b3ULL;
+	for (size_t i = n * 8; i < m_scratch.size(); i++)
+		h = (h ^ m_scratch[i]) * 0x100000001b3ULL;
 	return mix64(h);
+}
+
+void rollback_tester::dump_state(const std::vector<u8> &state, const std::string &suffix)
+{
+	if (m_out.empty())
+		return;
+	FILE *f = std::fopen((m_out + suffix).c_str(), "wb");
+	if (f)
+	{
+		std::fwrite(state.data(), 1, state.size(), f);
+		std::fclose(f);
+	}
 }
 
 void rollback_tester::log_confirmed(s64 upto)
 {
 	for (s64 c = m_logged + 1; c <= upto; c++)
 	{
-		const bool dump = std::find(m_dump.begin(), m_dump.end(), c) != m_dump.end();
-		if ((c % m_hash_every) != 0 && !dump)
-			continue;
-		slot &s = slot_for(c);
+		const slot &s = slot_for(c);
 		const bool ok = s.frame == c && s.valid;
 		if (m_hashlog && (c % m_hash_every) == 0)
 		{
 			if (ok)
-			{
-				const u64 hc = hash_buffer(s.data);
-				const u64 hl = hash_logic();
-				std::fprintf(m_hashlog, "%lld,%016llx,%016llx\n", (long long)c, (unsigned long long)hc, (unsigned long long)hl);
-			}
+				std::fprintf(m_hashlog, "%lld,%016llx\n", (long long)c, (unsigned long long)state_hash(s.data));
 			else
-				std::fprintf(m_hashlog, "%lld,NA,NA\n", (long long)c);
+				std::fprintf(m_hashlog, "%lld,NA\n", (long long)c);
 		}
-		if (dump && ok && !m_out.empty())
-		{
-			if (c == m_cur)
-				m_machine.scheduler().dump_timers();
-			FILE *f = std::fopen(util::string_format("%s.%lld.state", m_out, (long long)c).c_str(), "wb");
-			if (f)
-			{
-				std::fwrite(s.data.data(), 1, s.data.size(), f);
-				std::fclose(f);
-			}
-		}
+		if (ok && std::find(m_dump.begin(), m_dump.end(), c) != m_dump.end())
+			dump_state(s.data, util::string_format(".%lld.state", (long long)c));
 	}
 	m_logged = std::max(m_logged, upto);
 }
@@ -492,6 +442,108 @@ void rollback_tester::run_one_frame()
 	}
 }
 
+// load the snapshot of frame `from` and re-run frames from..to-1 with the
+// best known inputs (video, audio and throttle off), saving every frame;
+// `check` is called after each save with the frame number
+template <typename T>
+void rollback_tester::resimulate(s64 from, s64 to, T &&check)
+{
+	auto t = clk::now();
+	load_slot(from);
+	apply_frame_to_ports(from);
+	m_resim = true;
+	m_machine.video().set_resimulating(!m_resim_draw);
+	m_machine.sound().set_discard_output(true);
+	for (m_cur = from; m_cur < to; )
+	{
+		auto tf = clk::now();
+		run_one_frame();
+		m_cur++;
+		check(m_cur, true);
+		save_slot(m_cur);
+		m_resim_frame_us.add(us_since(tf));
+		check(m_cur, false);
+	}
+	m_frame_ended = false;
+	m_machine.sound().set_discard_output(false);
+	m_machine.video().set_resimulating(false);
+	m_resim = false;
+	m_rollback_us.add(us_since(t));
+	m_depth.add(double(to - from));
+	m_rollbacks++;
+}
+
+// GGPO-style sync test: every frame, roll back m_check frames and resimulate
+// with the same inputs; a state that differs from the first pass depends on
+// something the save state does not hold
+void rollback_tester::sync_test(s64 b)
+{
+	const size_t n = m_slots.size();
+	m_first_hash[b % n] = { b, state_hash(slot_for(b).data) };
+	const s64 j = b - m_check;
+	if (j < 1 || slot_for(j).frame != j || !slot_for(j).valid)
+		return;
+	std::vector<u8> first_pass;
+	resimulate(j, b, [&] (s64 f, bool before_save)
+	{
+		if (before_save)
+		{
+			if (!m_st_dumped)
+				first_pass = slot_for(f).data;
+			return;
+		}
+		const slot &sl = slot_for(f);
+		auto &fh = m_first_hash[f % n];
+		if (!sl.valid || fh.first != f)
+			return;
+		m_st_checked++;
+		const u64 h = state_hash(sl.data);
+		if (h == fh.second)
+			return;
+		m_st_mismatch++;
+		if (m_stlog)
+			std::fprintf(m_stlog, "frame %lld differs after reload of %lld (boundary %lld)\n", (long long)f, (long long)j, (long long)b);
+		if (!m_st_dumped)
+		{
+			m_st_dumped = true;
+			dump_state(first_pass, util::string_format(".stA.%lld.state", (long long)f));
+			dump_state(sl.data, util::string_format(".stB.%lld.state", (long long)f));
+		}
+		fh.second = h;
+	});
+}
+
+// fake peer: roll back to the first frame whose applied remote inputs
+// differ from what is known now
+void rollback_tester::rollback_if_needed(s64 b)
+{
+	const s64 oldest = std::max<s64>(1, b - m_window);
+	s64 k = -1;
+	for (s64 f = oldest; f <= b && k < 0; f++)
+	{
+		const frame_record &r = rec_for(f);
+		if (r.frame != f)
+			continue;
+		for (int p = 1; p < m_players; p++)
+			if (r.used[p] != best(p, f)) { k = f; break; }
+	}
+	if (k < 0)
+		return;
+
+	// newest valid snapshot not after k (a save can fail on anonymous timers)
+	s64 j = k;
+	while (j >= oldest && !(slot_for(j).frame == j && slot_for(j).valid))
+		j--;
+	if (j < oldest)
+	{
+		m_unrecoverable++;
+		return;
+	}
+	if (j < k)
+		m_extra_depth++;
+	resimulate(j, b, [] (s64, bool) { });
+}
+
 void rollback_tester::post_timeslice()
 {
 	if (!m_frame_ended || m_done)
@@ -500,144 +552,36 @@ void rollback_tester::post_timeslice()
 	m_frame_us.add(us_since(m_frame_start));
 
 	const s64 b = ++m_cur; // boundary before frame b (inputs for b already applied)
+	s64 confirmed = b;
 
-	if (m_mode == mode::PLAIN)
+	switch (m_mode)
 	{
-		const bool dump = std::find(m_dump.begin(), m_dump.end(), b) != m_dump.end();
-		if ((b % m_hash_every) == 0 || dump)
+	case mode::PLAIN:
+		if ((b % m_hash_every) == 0 || std::find(m_dump.begin(), m_dump.end(), b) != m_dump.end())
 			save_slot(b);
-		log_confirmed(b);
+		break;
+
+	case mode::SAVEALL:
+		save_slot(b);
+		break;
+
+	case mode::SYNCTEST:
+		if (save_slot(b))
+			sync_test(b);
+		break;
+
+	case mode::ROLLBACK:
+		update_arrivals(b);
+		// with anonymous timers pending neither save nor load is safe: retry next frame
+		if (save_slot(b))
+			rollback_if_needed(b);
+		else
+			m_deferred++;
+		for (int p = 1; p < m_players; p++)
+			confirmed = std::min(confirmed, m_known[p]);
+		break;
 	}
-	else
-	{
-		if (m_mode == mode::ROLLBACK)
-			update_arrivals(b);
-
-		const bool saved = save_slot(b);
-
-		if (m_mode == mode::SYNCTEST && saved)
-		{
-			// GGPO-style sync test: every frame, roll back m_check frames and
-			// resimulate with the same inputs; any state that differs from the
-			// first pass depends on something the save state does not hold
-			const size_t n = m_slots.size();
-			hash_buffer(slot_for(b).data);
-			m_first_hash[b % n] = { b, hash_logic() };
-			const s64 j = b - m_check;
-			if (j >= 1 && slot_for(j).frame == j && slot_for(j).valid)
-			{
-				auto t = clk::now();
-				load_slot(j);
-				apply_frame_to_ports(j);
-				m_resim = true;
-				m_machine.video().set_resimulating(true);
-				m_machine.sound().set_discard_output(true);
-				for (m_cur = j; m_cur < b; )
-				{
-					auto tf = clk::now();
-					run_one_frame();
-					m_cur++;
-					std::vector<u8> before;
-					if (!m_st_dumped)
-						before = slot_for(m_cur).data;
-					save_slot(m_cur);
-					m_resim_frame_us.add(us_since(tf));
-					slot &sl = slot_for(m_cur);
-					auto &fh = m_first_hash[m_cur % n];
-					if (sl.valid && fh.first == m_cur)
-					{
-						hash_buffer(sl.data);
-						const u64 h = hash_logic();
-						m_st_checked++;
-						if (h != fh.second)
-						{
-							m_st_mismatch++;
-							if (m_stlog)
-								std::fprintf(m_stlog, "frame %lld differs after reload of %lld (boundary %lld)\n", (long long)m_cur, (long long)j, (long long)b);
-							if (!m_st_dumped && !m_out.empty())
-							{
-								m_st_dumped = true;
-								for (int w = 0; w < 2; w++)
-								{
-									FILE *f = std::fopen(util::string_format("%s.st%s.%lld.state", m_out, w ? "B" : "A", (long long)m_cur).c_str(), "wb");
-									if (f) { const auto &d = w ? sl.data : before; std::fwrite(d.data(), 1, d.size(), f); std::fclose(f); }
-								}
-							}
-							fh.second = h;
-						}
-					}
-				}
-				m_frame_ended = false;
-				m_machine.sound().set_discard_output(false);
-				m_machine.video().set_resimulating(false);
-				m_resim = false;
-				m_rollback_us.add(us_since(t));
-				m_rollbacks++;
-			}
-		}
-
-		if (m_mode == mode::ROLLBACK)
-		{
-			if (!saved)
-			{
-				// anonymous timers pending: neither save nor load is safe now
-				m_deferred++;
-			}
-			else
-			{
-				// earliest frame whose applied inputs differ from the best knowledge
-				s64 k = -1;
-				for (s64 f = std::max<s64>(1, b - m_window); f <= b && k < 0; f++)
-				{
-					frame_record &r = rec_for(f);
-					if (r.frame != f)
-						continue;
-					for (int p = 1; p < m_players; p++)
-						if (r.used[p] != best(p, f)) { k = f; break; }
-				}
-				if (k >= 0)
-				{
-					// newest valid snapshot not after k
-					s64 j = k;
-					while (j >= std::max<s64>(1, b - m_window) && !(slot_for(j).frame == j && slot_for(j).valid))
-						j--;
-					if (j < std::max<s64>(1, b - m_window))
-						m_unrecoverable++;
-					else
-					{
-						auto t = clk::now();
-						load_slot(j);
-						apply_frame_to_ports(j);
-						m_resim = true;
-						m_machine.video().set_resimulating(true);
-						m_machine.sound().set_discard_output(true);
-						for (m_cur = j; m_cur < b; )
-						{
-							auto tf = clk::now();
-							run_one_frame();
-							m_cur++;
-							save_slot(m_cur);
-							m_resim_frame_us.add(us_since(tf));
-						}
-						m_frame_ended = false;
-						m_machine.sound().set_discard_output(false);
-						m_machine.video().set_resimulating(false);
-						m_resim = false;
-						m_rollback_us.add(us_since(t));
-						m_depth.add(double(b - j));
-						m_rollbacks++;
-						if (j < k) m_extra_depth++;
-					}
-				}
-			}
-		}
-
-		s64 upto = b;
-		if (m_mode == mode::ROLLBACK)
-			for (int p = 1; p < m_players; p++)
-				upto = std::min(upto, m_known[p]);
-		log_confirmed(upto);
-	}
+	log_confirmed(confirmed);
 
 	if (std::find(m_snap.begin(), m_snap.end(), b) != m_snap.end())
 		m_machine.video().save_active_screen_snapshots();

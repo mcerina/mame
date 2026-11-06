@@ -85,9 +85,11 @@ private:
 	frame_record &rec_for(s64 frame) { return m_recs[frame % m_recs.size()]; }
 	bool save_slot(s64 frame);
 	bool load_slot(s64 frame);
-	u64 hash_buffer(const std::vector<u8> &buf);
-	u64 hash_logic();
-	static u64 hash_raw(const std::vector<u8> &buf);
+	u64 state_hash(const std::vector<u8> &state);
+	void dump_state(const std::vector<u8> &state, const std::string &suffix);
+	template <typename T> void resimulate(s64 from, s64 to, T &&check);
+	void sync_test(s64 boundary);
+	void rollback_if_needed(s64 boundary);
 	void log_confirmed(s64 upto);
 	void run_one_frame();
 	void finish();
@@ -106,6 +108,8 @@ private:
 	std::vector<s64> m_dump;
 	std::vector<s64> m_snap;
 	int m_check = 4;                          // synctest: frames to roll back every frame
+	bool m_resim_draw = false;                // draw screens while resimulating (diagnostic: state left
+	                                          // behind only by skipped draws then stops differing)
 	std::vector<std::pair<s64, u64>> m_first_hash; // synctest: first-pass logic hash per slot
 	u64 m_st_checked = 0, m_st_mismatch = 0;
 	bool m_st_dumped = false;
@@ -142,9 +146,7 @@ private:
 	bool m_done = false;
 	s64 m_logged = 0;
 	std::vector<u8> m_scratch;
-	std::vector<std::array<size_t, 5>> m_timer_norm; // m_index, m_enabled, m_expire.seconds, m_start.attoseconds, m_start.seconds
-	std::vector<std::pair<size_t, size_t>> m_video_norm; // video-derived state (tilemaps, screens): excluded from the logic hash
-	std::vector<std::pair<size_t, size_t>> m_zero_norm; // video-only fields (offset, size)
+	std::vector<std::pair<size_t, size_t>> m_hash_skip; // (offset, size) of items left out of the desync hash
 	FILE *m_hashlog = nullptr;
 
 	// statistics
