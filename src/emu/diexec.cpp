@@ -160,14 +160,16 @@ void device_execute_interface::resume(u32 reason)
 
 void device_execute_interface::spin_until_time(const attotime &duration)
 {
-	static int timetrig = 0;
+	// one trigger per device, like m_inttrigger: a shared rolling counter
+	// would make the trigger (saved in m_trigger and in the timer) depend
+	// on the history of every device rather than on the saved state
+	int const trigger = TRIGGER_SUSPENDTIME + (m_inttrigger - TRIGGER_INT);
 
 	// suspend until the given trigger fires
-	suspend_until_trigger(TRIGGER_SUSPENDTIME + timetrig, true);
+	suspend_until_trigger(trigger, true);
 
 	// then set a timer for it
-	m_spin_end_timer->adjust(duration, TRIGGER_SUSPENDTIME + timetrig);
-	timetrig = (timetrig + 1) % 256;
+	m_spin_end_timer->adjust(duration, trigger);
 }
 
 
