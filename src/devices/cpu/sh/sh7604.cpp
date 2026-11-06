@@ -176,6 +176,17 @@ void sh7604_device::device_start()
 	save_item(NAME(m_rtcsr));
 	save_item(NAME(m_rtcor));
 	save_item(NAME(m_rtcnt));
+
+	// the DMA transfers in progress (the timers that drive them are saved by the scheduler)
+	save_item(NAME(m_dma_timer_active));
+	save_item(NAME(m_dma_irq));
+	save_item(NAME(m_active_dma_incs));
+	save_item(NAME(m_active_dma_incd));
+	save_item(NAME(m_active_dma_size));
+	save_item(NAME(m_active_dma_steal));
+	save_item(NAME(m_active_dma_src));
+	save_item(NAME(m_active_dma_dst));
+	save_item(NAME(m_active_dma_count));
 }
 
 void sh7604_device::device_reset()
