@@ -45,6 +45,19 @@ device_rtc_interface::~device_rtc_interface()
 
 
 //-------------------------------------------------
+//  interface_post_start - the clock registers are
+//  the time base advance_seconds() counts from, so
+//  they must be in the save state (named so as not
+//  to clash with devices' own m_register arrays)
+//-------------------------------------------------
+
+void device_rtc_interface::interface_post_start()
+{
+	device().save_item(m_register, "rtc_register");
+}
+
+
+//-------------------------------------------------
 //  set_time - called to initialize the RTC to
 //  a known date/time
 //-------------------------------------------------
