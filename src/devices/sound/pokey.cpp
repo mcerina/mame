@@ -314,6 +314,9 @@ void pokey_device::device_start()
 	save_item(STRUCT_MEMBER(m_channel, m_AUDF));
 	save_item(STRUCT_MEMBER(m_channel, m_AUDC));
 
+	save_item(NAME(m_out_raw));
+	save_item(NAME(m_old_raw_inval));
+	save_item(NAME(m_out_filter));
 	save_item(NAME(m_clock_cnt));
 	save_item(NAME(m_p4));
 	save_item(NAME(m_p5));
