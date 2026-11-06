@@ -9,6 +9,7 @@
 ***************************************************************************/
 
 #include "emu.h"
+#include "rbtest.h"
 
 #include "config.h"
 #include "emuopts.h"
@@ -2174,6 +2175,10 @@ void ioport_manager::frame_update()
 {
 	auto profile = g_profiler.start(PROFILER_INPUT);
 
+	rollback_tester *const rbtest = machine().rbtest();
+	if (rbtest)
+		rbtest->frame_inputs_begin();
+
 	// record/playback information about the current frame
 	attotime curtime = machine().time();
 	playback_frame(curtime);
@@ -2198,6 +2203,8 @@ void ioport_manager::frame_update()
 	for (auto &port : m_portlist)
 	{
 		port.second->frame_update();
+		if (rbtest)
+			rbtest->frame_inputs_port(*port.second);
 
 		// handle playback/record
 		playback_port(*port.second.get());

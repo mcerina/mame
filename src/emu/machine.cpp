@@ -9,6 +9,7 @@
 ***************************************************************************/
 
 #include "emu.h"
+#include "rbtest.h"
 
 #include "config.h"
 #include "crsshair.h"
@@ -419,6 +420,9 @@ int running_machine::run(bool quiet)
 		// perform a soft reset -- this takes us to the running phase
 		soft_reset();
 
+		// rollback feasibility harness
+		m_rbtest = rollback_tester::create(*this);
+
 		// handle initial load
 		if (m_saveload_schedule != saveload_schedule::NONE)
 			handle_saveload();
@@ -437,7 +441,11 @@ int running_machine::run(bool quiet)
 
 			// execute CPUs if not paused
 			if (!m_paused)
+			{
 				m_scheduler.timeslice();
+				if (m_rbtest)
+					m_rbtest->post_timeslice();
+			}
 			// otherwise, just pump video updates and sound mapping updates through
 			else
 			{

@@ -96,6 +96,8 @@ public:
 typedef delegate<void ()> machine_notify_delegate;
 
 // description of the currently-running machine
+class rollback_tester;
+
 class running_machine
 {
 	DISABLE_COPYING(running_machine);
@@ -141,6 +143,7 @@ public:
 	debugger_manager &debugger() const { assert(m_debugger != nullptr); return *m_debugger; }
 	natural_keyboard &natkeyboard() noexcept { assert(m_natkeyboard != nullptr); return *m_natkeyboard; }
 	machine_phase phase() const { return m_current_phase; }
+	rollback_tester *rbtest() const { return m_rbtest.get(); }
 	bool paused() const { return m_paused || (m_current_phase != machine_phase::RUNNING); }
 	bool exit_pending() const { return m_exit_pending; }
 	bool hard_reset_pending() const { return m_hard_reset_pending; }
@@ -345,6 +348,7 @@ private:
 	ioport_manager          m_ioport;               // I/O port manager
 	parameters_manager      m_parameters;           // parameters manager
 	device_scheduler        m_scheduler;            // scheduler object
+	std::unique_ptr<rollback_tester> m_rbtest;      // rollback feasibility harness (MAME_RBTEST)
 
 	// string formatting buffer
 	mutable util::ovectorstream m_string_buffer;
