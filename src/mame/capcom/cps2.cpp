@@ -653,7 +653,6 @@ public:
 		: cps_state(mconfig, type, tag)
 		, m_objram(*this, "objram%u", 1U)
 		, m_output(*this, "output")
-		, m_decrypted_opcodes(*this, "decrypted_opcodes")
 		, m_region_key(*this, "key")
 		, m_comm(*this, "comm")
 		, m_digitalvol(*this, "DIGITALVOL")
@@ -714,6 +713,7 @@ private:
 	void dead_cps2_comm_map(address_map &map) ATTR_COLD;
 	void dead_cps2_map(address_map &map) ATTR_COLD;
 	void decrypted_opcodes_map(address_map &map) ATTR_COLD;
+	void alloc_decrypted_opcodes() ATTR_COLD;
 
 	void init_cps2_video() ATTR_COLD;
 	void init_cps2crypt() ATTR_COLD;
@@ -721,7 +721,7 @@ private:
 	required_shared_ptr_array<uint16_t, 2> m_objram;
 	required_shared_ptr<uint16_t> m_output;
 
-	optional_shared_ptr<uint16_t> m_decrypted_opcodes;
+	std::unique_ptr<uint16_t []> m_decrypted_opcodes;
 	optional_memory_region m_region_key;
 
 	optional_device<cps2_comm_device> m_comm;
@@ -1315,7 +1315,14 @@ void cps2_state::cps2_comm_map(address_map &map)
 
 void cps2_state::decrypted_opcodes_map(address_map &map)
 {
-	map(0x000000, 0x3fffff).rom().share(m_decrypted_opcodes); // 68000 ROM
+	// see alloc_decrypted_opcodes
+}
+
+void cps2_state::alloc_decrypted_opcodes()
+{
+	// not a memory share: constant after init, it stays out of the save states
+	m_decrypted_opcodes = make_unique_clear<uint16_t []>(0x400000 / 2);
+	m_maincpu->space(AS_OPCODES).install_rom(0x000000, 0x3fffff, m_decrypted_opcodes.get()); // 68000 ROM
 }
 
 void cps2_state::dead_cps2_map(address_map &map)
@@ -10892,6 +10899,8 @@ void cps2_state::init_cps2_video()
 
 void cps2_state::init_cps2crypt()
 {
+	alloc_decrypted_opcodes();
+
 	if (m_region_key)
 	{
 		uint16_t decoded[10] = { 0 };
@@ -10928,7 +10937,7 @@ void cps2_state::init_cps2crypt()
 		logerror("cps2 decrypt 0x%08x,0x%08x,0x%08x,0x%08x\n", key[0], key[1], lower, upper);
 
 		// we have a proper key so use it to decrypt
-		cps2_decrypt(machine(), (uint16_t *)memregion("maincpu")->base(), m_decrypted_opcodes, memregion("maincpu")->bytes(), key, lower / 2, upper / 2);
+		cps2_decrypt(machine(), (uint16_t *)memregion("maincpu")->base(), m_decrypted_opcodes.get(), memregion("maincpu")->bytes(), key, lower / 2, upper / 2);
 	}
 }
 
@@ -11009,7 +11018,8 @@ void cps2_state::init_gigaman2()
 
 	space.install_readwrite_handler(0x618000, 0x619fff, read16sm_delegate(*this, FUNC(cps2_state::gigaman2_dummyqsound_r)), write16sm_delegate(*this, FUNC(cps2_state::gigaman2_dummyqsound_w))); // no qsound..
 
-	memcpy(m_decrypted_opcodes, memregion("maincpu")->base() + 0x200000, 0x200000);
+	alloc_decrypted_opcodes();
+	memcpy(m_decrypted_opcodes.get(), memregion("maincpu")->base() + 0x200000, 0x200000);
 
 	// No digital volume switches on this?
 	m_digital_volume_timer->adjust(attotime::never, 0, attotime::never);

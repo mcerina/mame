@@ -264,7 +264,7 @@ void midyunit_base_state::dma_draw(uint16_t command)
 	int const dx = (command & 0x10) ? -1 : 1;
 	int const height = m_dma_state.height;
 	int const width = m_dma_state.width;
-	uint8_t const *const base = m_gfx_rom;
+	uint8_t const *const base = m_gfx_rom.get();
 	uint32_t offset = m_dma_state.offset >> 3;
 	uint16_t const pal = m_dma_state.palette;
 	uint16_t const color = pal | m_dma_state.color;

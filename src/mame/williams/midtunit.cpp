@@ -57,7 +57,7 @@ void midtunit_base_state::main_map(address_map &map)
 //  map(0x01c00060, 0x01c0007f).w(FUNC(midtunit_base_state::cmos_enable_w));
 	map(0x01d81060, 0x01d8107f).w("watchdog", FUNC(watchdog_timer_device::reset16_w));
 	map(0x01f00000, 0x01f0001f).w(m_video, FUNC(midtunit_video_device::midtunit_control_w));
-	map(0x02000000, 0x07ffffff).r(m_video, FUNC(midtunit_video_device::midtunit_gfxrom_r)).share("video");
+	map(0x02000000, 0x07ffffff).r(m_video, FUNC(midtunit_video_device::midtunit_gfxrom_r));
 	map(0x1f800000, 0x1fffffff).rom().region("maincpu", 0); // mirror used by MK
 	map(0xff800000, 0xffffffff).rom().region("maincpu", 0);
 }

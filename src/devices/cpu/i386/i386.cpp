@@ -77,6 +77,7 @@ i386_device::i386_device(const machine_config &mconfig, device_type type, const 
 {
 	// 32 unified
 	set_vtlb_dynamic_entries(32);
+	set_vtlb_saved(false);     // a cache of the page table walks
 }
 
 i386sx_device::i386sx_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock)

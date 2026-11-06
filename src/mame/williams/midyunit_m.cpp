@@ -246,7 +246,8 @@ void midyunit_base_state::install_hidden_ram(mc6809e_device &cpu, int prot_start
 
 void midyunit_base_state::init_gfxrom(int bpp)
 {
-	offs_t const gfx_chunk = m_gfx_rom.bytes() / 4;
+	m_gfx_rom = std::make_unique<uint8_t []>(GFX_ROM_SIZE);
+	offs_t const gfx_chunk = GFX_ROM_SIZE / 4;
 	uint8_t d1, d2, d3, d4, d5, d6;
 
 	// load graphics ROMs
@@ -254,7 +255,7 @@ void midyunit_base_state::init_gfxrom(int bpp)
 	switch (bpp)
 	{
 		case 4:
-			for (int i = 0; i < m_gfx_rom.bytes(); i += 2)
+			for (int i = 0; i < GFX_ROM_SIZE; i += 2)
 			{
 				d1 = ((base[0 * gfx_chunk + (i + 0) / 4]) >> (2 * ((i + 0) % 4))) & 3;
 				d2 = ((base[1 * gfx_chunk + (i + 0) / 4]) >> (2 * ((i + 0) % 4))) & 3;
@@ -267,7 +268,7 @@ void midyunit_base_state::init_gfxrom(int bpp)
 			break;
 
 		case 6:
-			for (int i = 0; i < m_gfx_rom.bytes(); i += 2)
+			for (int i = 0; i < GFX_ROM_SIZE; i += 2)
 			{
 				d1 = ((base[0 * gfx_chunk + (i + 0) / 4]) >> (2 * ((i + 0) % 4))) & 3;
 				d2 = ((base[1 * gfx_chunk + (i + 0) / 4]) >> (2 * ((i + 0) % 4))) & 3;
@@ -282,7 +283,7 @@ void midyunit_base_state::init_gfxrom(int bpp)
 			break;
 
 		case 8:
-			for (int i = 0; i < m_gfx_rom.bytes(); i += 4)
+			for (int i = 0; i < GFX_ROM_SIZE; i += 4)
 			{
 				m_gfx_rom[i + 0] = base[0 * gfx_chunk + i / 4];
 				m_gfx_rom[i + 1] = base[1 * gfx_chunk + i / 4];

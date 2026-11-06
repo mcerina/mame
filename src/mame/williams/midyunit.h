@@ -30,7 +30,6 @@ protected:
 		, m_palette(*this, "palette")
 		, m_nvram(*this, "nvram")
 		, m_paletteram(*this, "paletteram")
-		, m_gfx_rom(*this, "gfx_rom", 0x800000, ENDIANNESS_BIG)
 		, m_mainram(*this, "mainram")
 		, m_ports(*this, { { "IN0", "IN1", "IN2", "DSW", "UNK0", "UNK1" } })
 	{
@@ -63,7 +62,8 @@ protected:
 	required_device<nvram_device> m_nvram;
 
 	required_shared_ptr<uint16_t> m_paletteram;
-	memory_share_creator<uint8_t> m_gfx_rom;
+	static constexpr offs_t GFX_ROM_SIZE = 0x800000;
+	std::unique_ptr<uint8_t []> m_gfx_rom;       // decoded at init, constant: not in the save states
 	required_shared_ptr<uint16_t> m_mainram;
 	optional_ioport_array<6> m_ports;
 
