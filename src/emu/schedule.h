@@ -181,6 +181,12 @@ private:
 	simple_list<quantum_slot>   m_quantum_list;             // list of active quanta
 	fixed_allocator<quantum_slot> m_quantum_allocator;      // allocator for quanta
 	attoseconds_t               m_quantum_minimum;          // duration of minimum quantum
+
+	// the quantum list as saved: temporary boosts change the interleave
+	static constexpr u32 SAVED_QUANTA = 16;
+	u32                         m_saved_quanta;
+	attoseconds_t               m_saved_quantum_requested[SAVED_QUANTA];
+	attotime                    m_saved_quantum_expire[SAVED_QUANTA];
 };
 
 

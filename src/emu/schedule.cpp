@@ -291,7 +291,9 @@ device_scheduler::device_scheduler(running_machine &machine) :
 	m_callback_timer_modified(false),
 	m_callback_timer_expire_time(attotime::zero),
 	m_suspend_changes_pending(true),
-	m_quantum_minimum(ATTOSECONDS_IN_NSEC(1) / 1000)
+	m_quantum_minimum(ATTOSECONDS_IN_NSEC(1) / 1000),
+	m_saved_quanta(0),
+	m_saved_quantum_requested{ 0 }
 {
 	// append a single never-expiring timer so there is always one in the list
 	// need to subvert it because it would naturally be inserted in the inactive list
@@ -304,6 +306,9 @@ device_scheduler::device_scheduler(running_machine &machine) :
 
 	// register global states
 	machine.save().save_item(NAME(m_basetime));
+	machine.save().save_item(NAME(m_saved_quanta));
+	machine.save().save_item(NAME(m_saved_quantum_requested));
+	machine.save().save_item(NAME(m_saved_quantum_expire));
 	machine.save().register_presave(save_prepost_delegate(FUNC(device_scheduler::presave), this));
 	machine.save().register_postload(save_prepost_delegate(FUNC(device_scheduler::postload), this));
 }
@@ -682,6 +687,21 @@ void device_scheduler::presave()
 	// saved data does not depend on their history (or uninitialised memory)
 	for (emu_timer *timer = m_inactive_timers; timer; timer = timer->m_next)
 		timer->m_index = 0;
+
+	// the quantum list (sorted by requested quantum); unused slots are cleared
+	m_saved_quanta = 0;
+	for (quantum_slot &quant : m_quantum_list)
+	{
+		if (m_saved_quanta == SAVED_QUANTA)
+			throw emu_fatalerror("Too many scheduling quanta to save\n");
+		m_saved_quantum_requested[m_saved_quanta] = quant.m_requested;
+		m_saved_quantum_expire[m_saved_quanta++] = quant.m_expire;
+	}
+	for (u32 i = m_saved_quanta; i != SAVED_QUANTA; i++)
+	{
+		m_saved_quantum_requested[i] = 0;
+		m_saved_quantum_expire[i] = attotime::zero;
+	}
 #if VERBOSE
 	dump_timers();
 #endif
@@ -735,6 +755,21 @@ void device_scheduler::postload()
 		emu_timer &timer = *private_list;
 		private_list = timer.m_next;
 		timer_list_insert<true>(timer);
+	}
+
+	// restore the quantum list as it was saved
+	if (m_saved_quanta)
+	{
+		while (!m_quantum_list.empty())
+			m_quantum_allocator.reclaim(m_quantum_list.detach_head());
+		for (u32 i = 0; i != m_saved_quanta; i++)
+		{
+			quantum_slot &quant = *m_quantum_allocator.alloc();
+			quant.m_requested = m_saved_quantum_requested[i];
+			quant.m_actual = std::max(quant.m_requested, m_quantum_minimum);
+			quant.m_expire = m_saved_quantum_expire[i];
+			m_quantum_list.append(quant);
+		}
 	}
 
 	m_suspend_changes_pending = true;
