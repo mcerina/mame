@@ -53,7 +53,8 @@ inline emu_timer::emu_timer() noexcept :
 	m_temporary(false),
 	m_period(attotime::zero),
 	m_start(attotime::zero),
-	m_expire(attotime::never)
+	m_expire(attotime::never),
+	m_index(0)
 {
 }
 
@@ -676,6 +677,11 @@ void device_scheduler::presave()
 	u32 index = 0;
 	for (emu_timer *timer = m_timer_list; timer; timer = timer->m_next)
 		timer->m_index = index++;
+
+	// inactive timers are not ordered on load; give them a fixed index so the
+	// saved data does not depend on their history (or uninitialised memory)
+	for (emu_timer *timer = m_inactive_timers; timer; timer = timer->m_next)
+		timer->m_index = 0;
 #if VERBOSE
 	dump_timers();
 #endif
