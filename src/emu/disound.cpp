@@ -97,7 +97,8 @@ template<typename S> emu::detail::output_buffer_flat<S>::output_buffer_flat(u32 
 	m_write_position(0),
 	m_sync_position(0),
 	m_history(0),
-	m_channels(channels)
+	m_channels(channels),
+	m_save_size(0)
 {
 	for(auto &b : m_buffer)
 		b.resize(buffer_size, 0);
@@ -107,8 +108,16 @@ template<typename S> void emu::detail::output_buffer_flat<S>::register_save_stat
 {
 	auto &save = device.machine().save();
 
-	for(unsigned int i = 0; i != m_buffer.size(); i++)
-		save.save_item(&device, id1, id2, i, NAME(m_buffer[i]));
+	// Only the live window (history + samples since the last sync, a
+	// few tens of milliseconds) is state; presave() moves it to the
+	// start of the buffer so that a fraction of the buffer is enough
+	if(m_channels) {
+		u32 const size = m_buffer[0].size();
+		m_save_size = std::min<u32>(size, size / 16 + 1024);
+		for(unsigned int i = 0; i != m_buffer.size(); i++)
+			save.save_pointer(&device, id1, id2, i, m_buffer[i].data(), "m_buffer[i]", m_save_size);
+		save.register_presave(save_prepost_delegate(FUNC(output_buffer_flat<S>::presave), this));
+	}
 
 	save.save_item(&device, id1, id2, 0, NAME(m_sync_sample));
 	save.save_item(&device, id1, id2, 0, NAME(m_write_position));
@@ -128,21 +137,38 @@ template<typename S> void emu::detail::output_buffer_flat<S>::prepare_space(u32 
 		return;
 
 	// Check if potential overflow, bring data back up front if needed
-	u32 buffer_size = m_buffer[0].size();
-	if(m_write_position + samples > buffer_size) {
-		u32 source_start = m_sync_position - m_history;
-		u32 source_end = m_write_position;
-		for(u32 channel = 0; channel != m_channels; channel++)
-			std::copy(m_buffer[channel].begin() + source_start, m_buffer[channel].begin() + source_end, m_buffer[channel].begin());
-		m_write_position -= source_start;
-		m_sync_position = m_history;
-	}
+	if(m_write_position + samples > m_buffer[0].size())
+		compact();
 
 	// Clear the destination range
 	u32 fill_start = m_write_position;
 	u32 fill_end = m_write_position + samples;
 	for(u32 channel = 0; channel != m_channels; channel++)
 		std::fill(m_buffer[channel].begin() + fill_start, m_buffer[channel].begin() + fill_end, 0.0);
+}
+
+template<typename S> void emu::detail::output_buffer_flat<S>::compact()
+{
+	// Move the live window (history + samples since the last sync) to the start
+	u32 source_start = m_sync_position - m_history;
+	u32 source_end = m_write_position;
+	if(source_start) {
+		for(u32 channel = 0; channel != m_channels; channel++)
+			std::copy(m_buffer[channel].begin() + source_start, m_buffer[channel].begin() + source_end, m_buffer[channel].begin());
+		m_write_position -= source_start;
+		m_sync_position = m_history;
+	}
+}
+
+template<typename S> void emu::detail::output_buffer_flat<S>::presave()
+{
+	compact();
+	if(m_write_position > m_save_size)
+		throw emu_fatalerror("Sound stream buffer: %u live samples exceed the %u saved\n", m_write_position, m_save_size);
+
+	// What follows the live window is stale: clear it so the saved data only depends on the state
+	for(u32 channel = 0; channel != m_channels; channel++)
+		std::fill(m_buffer[channel].begin() + m_write_position, m_buffer[channel].begin() + m_save_size, 0.0);
 }
 
 template<typename S> void emu::detail::output_buffer_flat<S>::commit(u32 samples)
