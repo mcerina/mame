@@ -341,6 +341,11 @@ void k054539_device::init_chip()
 	save_item(NAME(m_rom_addr));
 
 	save_item(NAME(m_timer_state));
+
+	save_item(STRUCT_MEMBER(m_channels, pos));
+	save_item(STRUCT_MEMBER(m_channels, pfrac));
+	save_item(STRUCT_MEMBER(m_channels, val));
+	save_item(STRUCT_MEMBER(m_channels, pval));
 }
 
 void k054539_device::write(offs_t offset, u8 data)
