@@ -14,9 +14,9 @@ TODO:
 - Only supports single channel samples!
 - Maybe this should be part of the presentation layer (artwork etc.)
   with samples specified in .lay files instead of in drivers?
-- Unless it's an infinitely looping sample, start_raw() is not compatible
-  with savestates. Save state right after start_raw(), load state later,
-  and the sample won't be playing.
+- start_raw() buffers are only known to the running session: a state
+  saved while one plays restores it in the same session (rollback), but
+  a state file loaded in a later session stops it.
 - No need for set_volume, can just use set_output_gain, but it's harmless.
 
 ***************************************************************************/
@@ -28,6 +28,8 @@ TODO:
 #include "fileio.h"
 
 #include "flac.h"
+
+#include <algorithm>
 
 
 //**************************************************************************
@@ -85,8 +87,8 @@ void samples_device::start(uint8_t channel, uint32_t samplenum, bool loop)
 	// update the parameters
 	sample_t &sample = m_sample[samplenum];
 	chan.source = (sample.data.size() > 0) ? &sample.data[0] : nullptr;
-	chan.source_num = (chan.source_len > 0) ? samplenum : -1;
 	chan.source_len = sample.data.size();
+	chan.source_num = (chan.source_len > 0) ? samplenum : -1;
 	chan.pos = 0.0;
 	chan.basefreq = sample.frequency;
 	chan.curfreq = sample.frequency;
@@ -108,9 +110,13 @@ void samples_device::start_raw(uint8_t channel, const int16_t *sampledata, uint3
 	channel_t &chan = m_channel[channel];
 	chan.stream->update();
 
-	// update the parameters
+	// update the parameters; raw buffers are numbered from -2 down so
+	// that a load in the same session can find them again
+	auto const raw = std::find(m_raw.begin(), m_raw.end(), std::make_pair(sampledata, samples)) - m_raw.begin();
+	if (raw == m_raw.size())
+		m_raw.emplace_back(sampledata, samples);
 	chan.source = sampledata;
-	chan.source_num = -1;
+	chan.source_num = -2 - int32_t(raw);
 	chan.source_len = samples;
 	chan.pos = 0.0;
 	chan.basefreq = frequency;
@@ -245,6 +251,7 @@ void samples_device::device_start()
 		chan.stream = stream_alloc(0, 1, rate);
 		chan.source = nullptr;
 		chan.source_num = -1;
+		chan.source_len = 0;
 		chan.pos = 0.0;
 		chan.basefreq = rate;
 		chan.curfreq = rate;
@@ -285,15 +292,19 @@ void samples_device::device_post_load()
 	{
 		// attach any samples that were loaded and playing
 		channel_t &chan = m_channel[channel];
-		if (chan.source_num >= 0 && chan.source_num < m_sample.size())
+		u32 const raw = -2 - chan.source_num;
+		chan.source = nullptr;
+		if (chan.source_num >= 0 && chan.source_num < m_sample.size() && !m_sample[chan.source_num].data.empty())
 		{
 			sample_t &sample = m_sample[chan.source_num];
 			chan.source = &sample.data[0];
 			chan.source_len = sample.data.size();
 			chan.basefreq = sample.frequency;
-			if (sample.data.empty())
-				chan.source_num = -1;
 		}
+		else if (chan.source_num <= -2 && raw < m_raw.size() && chan.source_len <= m_raw[raw].second)
+			chan.source = m_raw[raw].first;
+		if (chan.source == nullptr)
+			chan.source_num = -1;
 
 		// validate the position against the length in case the sample is smaller
 		double endpos = chan.source_len;

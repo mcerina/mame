@@ -101,6 +101,7 @@ protected:
 	// internal state
 	std::vector<channel_t> m_channel;
 	std::vector<sample_t> m_sample;
+	std::vector<std::pair<const int16_t *, uint32_t>> m_raw; // start_raw() buffers seen in this session
 
 	// internal constants
 	static constexpr uint8_t FRAC_BITS = 24;
