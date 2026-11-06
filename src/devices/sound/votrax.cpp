@@ -208,6 +208,12 @@ void votrax_sc01_device::device_start()
 	m_ar_state = ASSERT_LINE;
 
 	// save inputs
+	// the clocks follow set_clock(): saved so that a load does not
+	// look like a clock change (which would rescale the restored timer)
+	save_item(NAME(m_mainclock));
+	save_item(NAME(m_sclock));
+	save_item(NAME(m_cclock));
+	save_item(NAME(m_sample_count));
 	save_item(NAME(m_inflection));
 	save_item(NAME(m_phone));
 

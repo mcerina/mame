@@ -51,6 +51,7 @@ void filter_rc_device::device_start()
 	m_last_sample_rate = 0;
 
 	save_item(NAME(m_k));
+	save_item(NAME(m_last_sample_rate));
 	save_item(NAME(m_memory));
 	save_item(NAME(m_type));
 	save_item(NAME(m_R1));
