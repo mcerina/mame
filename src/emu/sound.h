@@ -212,7 +212,8 @@ public:
 	void set_resampler_hq_phases(u32 phases);
 
 private:
-	std::atomic<bool> m_discard_output = false;     // rollback resimulation: drop samples sent to the OSD
+	bool m_effects_discard = false;                 // the discard flag of the block the effects thread takes
+	bool m_discard_output = false;                  // rollback resimulation: drop samples sent to the OSD
 
 	struct effect_step {
 		std::unique_ptr<audio_effect> m_effect;

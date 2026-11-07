@@ -351,6 +351,8 @@ void sound_manager::run_effects()
 
 		std::unique_lock<std::mutex> lock(m_effects_mutex);
 #endif
+		bool const discard = m_effects_discard;
+
 		// Copy the data to the effects threads, expanding as needed when -speed is in use
 		double sf = machine().video().speed_factor();
 		if(sf == 1000) {
@@ -482,7 +484,7 @@ void sound_manager::run_effects()
 
 		// Send the result to the osd
 		for(auto &stream : m_osd_output_streams)
-			if(stream.m_samples && !m_discard_output)
+			if(stream.m_samples && !discard)
 				machine().osd().sound_stream_sink_update(stream.m_id, stream.m_buffer.data(), stream.m_samples);
 
 		machine().osd().sound_end_update();
@@ -2011,6 +2013,7 @@ void sound_manager::streams_update()
 
 		m_effects_prev_time = m_effects_cur_time;
 		m_effects_cur_time = now;
+		m_effects_discard = m_discard_output;
 
 		for(sound_stream *stream : m_ordered_streams)
 			stream->update_nodeps();
@@ -2051,6 +2054,9 @@ void sound_manager::streams_update()
 
 	for(osd_input_stream &stream : m_osd_input_streams)
 		stream.m_buffer.sync();
+
+	if(m_discard_output)
+		return;
 
 	machine().osd().add_audio_to_recording(m_record_buffer.data(), m_record_samples);
 	machine().video().add_sound_to_recording(m_record_buffer.data(), m_record_samples);
