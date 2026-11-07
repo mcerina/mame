@@ -37,6 +37,7 @@ src/mame/irem/m107.cpp
 src/mame/irem/m90.cpp
 src/mame/irem/m92.cpp
 src/mame/jaleco/megasys1.cpp
+src/mame/kaneko/airbustr.cpp
 src/mame/kaneko/kaneko16.cpp
 src/mame/kaneko/snowbros.cpp
 src/mame/konami/aliens.cpp

@@ -44,7 +44,7 @@ ninjak	m_spritepri;m_tilepri
 nitrobal	m_tmap.m_bank
 nost	m_palette_bank
 nslasher	m_tmap.m_bank
-progearu	m_cps2_last_sprite_offset
+progear	m_cps2_last_sprite_offset
 pulirula	m_base_color;m_spritepri;m_tilepri
 punisher	m_last_sprite_offset
 punkshot	m_layerpri
@@ -56,7 +56,7 @@ ripoff	m_prevpoint.col;m_prevpoint.x;m_prevpoint.y
 robocop2	m_flip_screen;m_flip_screen_x;m_flip_screen_y
 rohga	m_flip_screen;m_flip_screen_x;m_flip_screen_y;m_tmap.m_bank
 s1945	m_old_linescroll;m_tmapsize
-sailormne	m_sprite_bitmap;m_spriteram_bank
+sailormn	m_sprite_bitmap;m_spriteram_bank
 samuraia	m_old_linescroll;m_tmapsize
 sidearms	m_latch_374
 simpsons	m_layer_colorbase;m_sprite_colorbase
@@ -69,7 +69,7 @@ tmnt2	m_layerpri
 uopoko	m_sprite_bitmap;m_spriteram_bank;m_tiledim
 vamphalf	first_scanline_tick/0/m_start
 varth	m_last_sprite_offset
-vendetta2pu	m_layer_colorbase;m_layerpri
+vendetta	m_layer_colorbase;m_layerpri
 wizdfire	m_tmap.m_bank
 wof	m_last_sprite_offset
 xexex	m_layerpri
