@@ -32,6 +32,7 @@
 #include "video.h"
 
 #include "asio.h"
+#include "multibyte.h"
 
 #include <zstd.h>
 
@@ -39,9 +40,12 @@
 #include <array>
 #include <cstdlib>
 #include <deque>
+#include <iostream>
+#include <mutex>
 #include <random>
 #include <sstream>
 #include <string_view>
+#include <thread>
 #include <vector>
 
 
@@ -50,7 +54,7 @@ namespace {
 using udp = asio::ip::udp;
 
 constexpr u32 MAGIC = 0x4d4e5031;
-constexpr u32 PROTOCOL = 1;
+constexpr u32 PROTOCOL = 2;
 constexpr int MAX_PLAYERS = 4;
 constexpr int INPUT_RING = 1024;        // frames of input kept: must cover a state transfer
 constexpr int MAX_INPUTS_PER_PACKET = 64;
@@ -59,13 +63,26 @@ constexpr u32 CHUNK_WINDOW = 256;       // chunks in flight, and what an acknowl
 constexpr u32 CHUNKS_PER_MS = 2;        // about 2.4 MB/s
 constexpr u32 CHUNK_RESEND_MS = 200;    // wait for the acknowledgements before sending again
 constexpr u32 PEER_TIMEOUT_MS = 10000;
-constexpr u32 JOIN_TIMEOUT_MS = 30000;
+constexpr u32 JOIN_TIMEOUT_MS = 300000;  // time to exchange the addresses by chat
 constexpr u32 RESYNC_RETRY_MS = 5000;
+constexpr u32 STUN_COOKIE = 0x2112a442;
+constexpr int STUN_TRIES = 8;
+constexpr u32 STUN_RETRY_MS = 300;
+constexpr u32 PUNCH_MS = 250;
 constexpr s64 START_FRAME = 1;
 constexpr s64 NO_FRAME = std::numeric_limits<s64>::max();
 constexpr size_t STATE_HEADER_SIZE = 32; // HEADER_SIZE in save.cpp
 
-enum packet_type : u8 { P_HELLO = 1, P_WELCOME, P_REJECT, P_START, P_GO, P_INPUT, P_HASH, P_RESYNC, P_CHUNK, P_CHUNK_ACK, P_BYE };
+enum packet_type : u8 { P_HELLO = 1, P_WELCOME, P_REJECT, P_START, P_GO, P_INPUT, P_HASH, P_RESYNC, P_CHUNK, P_CHUNK_ACK, P_BYE, P_PUNCH };
+
+// an address as people paste it: without spaces or a final full stop
+std::string clean_address(std::string text)
+{
+	text.erase(std::remove_if(text.begin(), text.end(), [] (char c) { return std::isspace(u8(c)); }), text.end());
+	while (!text.empty() && text.back() == '.')
+		text.pop_back();
+	return text;
+}
 
 u64 hash_bytes(u64 h, const void *data, size_t size)
 {
@@ -241,7 +258,8 @@ private:
 		transfer_out tx;
 		bool session_ready = false; // got the starting state
 		bool resync_wanted = false;
-		s64 resync_frame = 0;
+		s64 resync_frame = 0;       // its present: the state sent can't be newer
+		s64 resync_check = 0;       // the checked frame that differed
 	};
 
 	struct hash_entry
@@ -251,6 +269,28 @@ private:
 		u64 host = 0;
 		bool have_mine = false;
 		bool have_host = false;
+	};
+
+	struct checked_state
+	{
+		s64 frame = -1;
+		std::vector<u8> data;
+	};
+
+	// a STUN binding request: the server answers with the address it saw
+	struct stun_query
+	{
+		udp::endpoint server;
+		std::array<u8, 12> id;
+		udp::endpoint mapped;
+		bool done = false;
+	};
+
+	// lines typed on the console, filled by a thread that may outlive the session
+	struct console_lines
+	{
+		std::mutex lock;
+		std::vector<std::string> lines;
 	};
 
 	struct delayed_packet
@@ -294,7 +334,7 @@ private:
 	void advance_confirmed(s64 boundary);
 	void hash_frame(s64 frame);
 	void compare_hash(hash_entry &entry);
-	void request_resync(s64 boundary);
+	void request_resync(s64 boundary, s64 frame);
 	void apply_received_state(s64 boundary);
 	void log_differences(const std::vector<u8> &mine, const std::vector<u8> &host);
 	void serve_resyncs();
@@ -309,6 +349,11 @@ private:
 	void flush_simulated();
 	void handle_packet(const udp::endpoint &from, const u8 *data, size_t size);
 	void handle_hello(const udp::endpoint &from, packet_reader &in);
+	void start_stun();
+	void stun_tick(u32 now);
+	bool handle_stun(const udp::endpoint &from, const u8 *data, size_t size);
+	void read_console();
+	void punch_tick(u32 now);
 	void handle_welcome(packet_reader &in);
 	void handle_start(packet_reader &in);
 	void handle_input(int sender, packet_reader &in);
@@ -347,6 +392,7 @@ private:
 
 	// input mapping
 	std::vector<ioport_port *> m_ports;
+	bool m_input_callbacks = false;     // inputs with a change callback, which writes machine state
 	std::unordered_map<ioport_port *, int> m_port_index;
 	std::vector<std::vector<port_field>> m_port_fields;
 	std::vector<ioport_type> m_bit_type;
@@ -367,7 +413,7 @@ private:
 	s64 m_floor = START_FRAME;      // no rollback before this frame: the state came from the host
 	s64 m_confirmed = START_FRAME;
 	std::vector<hash_entry> m_hashes;
-	int m_mismatches = 0;           // consecutive hash checks that differ
+	checked_state m_checked[2];     // the states of the last hashed frames: a repair starts from the one that differed
 	bool m_resync_pending = false;
 	u32 m_resync_ms = 0;
 
@@ -388,6 +434,16 @@ private:
 	u32 m_lobby_start_ms = 0;
 	u32 m_last_hello_ms = 0;
 	u32 m_last_draw_ms = 0;
+
+	// NAT traversal: the public address, and the players' addresses the host
+	// sends to until they join, so that its router lets their packets in
+	std::vector<stun_query> m_stun;
+	int m_stun_tries = 0;
+	u32 m_stun_ms = 0;
+	bool m_stun_reported = false;
+	std::vector<udp::endpoint> m_punch;
+	u32 m_punch_ms = 0;
+	std::shared_ptr<console_lines> m_console;
 	bool m_welcomed = false;
 	bool m_started = false;
 	bool m_go = false;
@@ -447,7 +503,7 @@ netplay_session::netplay_session(running_machine &machine, bool host)
 	}
 	else
 	{
-		const std::string target = machine.options().netplay_join();
+		const std::string target = clean_address(machine.options().netplay_join());
 		const auto colon = target.rfind(':');
 		if (colon == std::string::npos)
 			throw emu_fatalerror("Netplay: -netplay_join needs host:port");
@@ -462,6 +518,7 @@ netplay_session::netplay_session(running_machine &machine, bool host)
 		osd_printf_info("Netplay: joining %s\n", target);
 	}
 	m_socket.non_blocking(true);
+	start_stun();
 
 	if (screen_device *screen = screen_device_enumerator(machine.root_device()).first())
 		m_frame_ms = float(screen->frame_period().as_double() * 1000.0);
@@ -523,6 +580,8 @@ void netplay_session::map_inputs()
 	{
 		m_port_index[p.second.get()] = int(m_ports.size());
 		m_ports.push_back(p.second.get());
+		for (auto &dyn : p.second->live().writelist)
+			m_input_callbacks = m_input_callbacks || dyn.field().type() != IPT_OUTPUT;
 	}
 	m_port_fields.resize(m_ports.size());
 
@@ -611,7 +670,7 @@ void netplay_session::start_session_buffers()
 
 
 // items the desync hash ignores: state derived from drawing, which depends
-// on whether a frame was drawn or resimulated, and frontend state
+// on whether a frame was drawn or resimulated, sound samples, and frontend state
 void netplay_session::compute_hash_skip()
 {
 	std::vector<std::string> exclude;
@@ -632,6 +691,11 @@ void netplay_session::compute_hash_skip()
 		const size_t size = size_t(valsize) * valcount * blockcount;
 		const std::string_view n(name);
 		bool skip = n.substr(0, 8) == "tilemap/" || n.substr(0, 13) == "Video Screen/" || n.find("lua_engine") != std::string_view::npos;
+
+		// sound samples are computed in floating point: two builds for different
+		// compilers or CPUs may round them differently; the sound chips' own
+		// state stays in the hash
+		skip = skip || n.substr(0, 7) == "stream.";
 		for (auto &x : exclude)
 			skip = skip || n.find(x) != std::string_view::npos;
 		if (skip)
@@ -778,6 +842,11 @@ void netplay_session::resimulate(s64 from, s64 to)
 	const osd_ticks_t start = osd_ticks();
 	m_machine.save().read_buffer(slot_for(from).data.data(), m_state_size);
 	apply_frame_to_ports(from);
+
+	// the slot was saved after the input callbacks ran with the inputs predicted
+	// then: save it again, or its hash differs from the other machines' one
+	if (m_input_callbacks)
+		save_slot(from);
 	m_resim = true;
 	m_machine.video().set_resimulating(!m_test_draw);
 	m_machine.sound().set_discard_output(true);
@@ -865,8 +934,10 @@ void netplay_session::lobby_tick()
 	send_chunk_ack();
 
 	const u32 now = now_ms();
+	stun_tick(now);
 	if (m_host)
 	{
+		punch_tick(now);
 		tick_transfers();
 		bool ready = m_all_joined;
 		for (int p = 1; p < m_players; p++)
@@ -1078,7 +1149,10 @@ void netplay_session::hash_frame(s64 frame)
 {
 	if (!slot_valid(frame))
 		return;
-	const u64 h = state_hash(slot_for(frame).data);
+	checked_state &c = m_checked[(frame / m_hash_every) % 2];
+	c.frame = frame;
+	c.data = slot_for(frame).data;
+	const u64 h = state_hash(c.data);
 	if (frame >= m_test_dump_from && frame <= m_test_dump_to)
 		if (FILE *f = std::fopen(util::string_format("%s.%d.state", m_log_path, int(frame)).c_str(), "wb"))
 		{
@@ -1114,17 +1188,15 @@ void netplay_session::compare_hash(hash_entry &e)
 	const bool same = e.mine == e.host;
 	e.have_mine = e.have_host = false;
 
-	// a real divergence stays: one that is gone by the next check repaired itself
-	m_mismatches = same ? 0 : m_mismatches + 1;
-	if (m_mismatches < 2)
+	if (same)
 		return;
 
 	m_desyncs++;
 	osd_printf_info("Netplay: desync at frame %d\n", int(e.frame));
-	request_resync(m_cur);
+	request_resync(m_cur, e.frame);
 }
 
-void netplay_session::request_resync(s64 boundary)
+void netplay_session::request_resync(s64 boundary, s64 frame)
 {
 	const u32 now = now_ms();
 	if (m_resync_pending && now - m_resync_ms < RESYNC_RETRY_MS)
@@ -1134,6 +1206,7 @@ void netplay_session::request_resync(s64 boundary)
 	m_machine.popmessage("Netplay: repairing a desync");
 	packet_writer out(P_RESYNC, m_session, m_me);
 	out.put<s32>(s32(boundary));
+	out.put<s32>(s32(frame));
 	send(m_peers[0].endpoint, out);
 }
 
@@ -1145,7 +1218,11 @@ void netplay_session::apply_received_state(s64 boundary)
 	if (frame > boundary || boundary - frame >= INPUT_RING - 1)
 		return; // too old to catch up from: the next hash mismatch asks again
 
-	if (slot_valid(frame))
+	// the host sends the state of the frame that differed, if it still has it
+	const checked_state &c = m_checked[(frame / m_hash_every) % 2];
+	if (c.frame == frame)
+		log_differences(c.data, m_rx.raw);
+	else if (slot_valid(frame))
 		log_differences(slot_for(frame).data, m_rx.raw);
 
 	slot &s = slot_for(frame);
@@ -1156,7 +1233,6 @@ void netplay_session::apply_received_state(s64 boundary)
 	m_confirmed = frame;
 	m_rollback_to = NO_FRAME;
 	m_hashes.assign(m_hashes.size(), hash_entry());
-	m_mismatches = 0;
 	resimulate(frame, boundary);
 	m_resync_pending = false;
 	m_resyncs++;
@@ -1186,7 +1262,8 @@ void netplay_session::log_differences(const std::vector<u8> &mine, const std::ve
 	osd_printf_info("Netplay: %d items differ: %s\n", count, names);
 }
 
-// host: send the newest confirmed state to whoever asked
+// host: send the state of the frame that differed, so that the client can
+// tell what differed, or else the newest confirmed one
 void netplay_session::serve_resyncs()
 {
 	if (!m_host)
@@ -1197,6 +1274,13 @@ void netplay_session::serve_resyncs()
 		if (!pr.resync_wanted || pr.tx.active)
 			continue;
 		const s64 newest = std::min(m_confirmed, pr.resync_frame);
+		const checked_state &c = m_checked[(pr.resync_check / m_hash_every) % 2];
+		if (c.frame == pr.resync_check && c.frame <= newest)
+		{
+			pr.resync_wanted = false;
+			start_transfer(p, c.frame, c.data);
+			continue;
+		}
 		const s64 oldest = std::max<s64>(START_FRAME, newest - s64(m_slots.size()) + 1);
 		for (s64 f = newest; f >= oldest; f--)
 		{
@@ -1238,6 +1322,185 @@ void netplay_session::update_time_sync(s64 boundary)
 	}
 	if (m_slowed)
 		m_slow_frames++;
+}
+
+
+//-------------------------------------------------
+//  NAT traversal: each player learns its public
+//  address from STUN servers and sends it to the
+//  others by chat; the host then sends to the
+//  players' addresses, which opens its router to
+//  their packets, as their own packets to the host
+//  open theirs (UDP hole punching)
+//-------------------------------------------------
+
+void netplay_session::start_stun()
+{
+	std::istringstream servers(m_machine.options().netplay_stun());
+	std::string server;
+	while (std::getline(servers, server, ';'))
+	{
+		const auto colon = server.rfind(':');
+		if (server.empty() || colon == std::string::npos)
+			continue;
+		asio::error_code ec;
+		udp::resolver resolver(m_io);
+		auto results = resolver.resolve(udp::v4(), server.substr(0, colon), server.substr(colon + 1), ec);
+		if (ec || results.empty())
+		{
+			osd_printf_verbose("Netplay: cannot resolve the STUN server %s\n", server);
+			continue;
+		}
+		stun_query &q = m_stun.emplace_back();
+		q.server = *results.begin();
+		for (u8 &b : q.id)
+			b = u8(m_sim_rng());
+	}
+	if (m_host)
+	{
+		// the players' addresses are typed or pasted on the console
+		auto console = std::make_shared<console_lines>();
+		m_console = console;
+		std::thread([console] ()
+		{
+			std::string line;
+			while (std::getline(std::cin, line))
+			{
+				std::lock_guard<std::mutex> guard(console->lock);
+				console->lines.push_back(line);
+			}
+		}).detach();
+	}
+}
+
+void netplay_session::stun_tick(u32 now)
+{
+	if (m_stun_reported || m_stun.empty() || now - m_stun_ms < STUN_RETRY_MS)
+		return;
+	if (m_stun_tries++ == STUN_TRIES)
+	{
+		m_stun_reported = true;
+		bool any = false;
+		for (const stun_query &q : m_stun)
+			any = any || q.done;
+		if (!any)
+			osd_printf_info("Netplay: no answer from the STUN servers, so your public address is unknown\n");
+		return;
+	}
+	m_stun_ms = now;
+	for (const stun_query &q : m_stun)
+	{
+		if (q.done)
+			continue;
+		u8 request[20] = { 0x00, 0x01, 0x00, 0x00 };
+		put_u32be(request + 4, STUN_COOKIE);
+		std::copy(q.id.begin(), q.id.end(), request + 8);
+		asio::error_code ec;
+		m_socket.send_to(asio::buffer(request), q.server, 0, ec);
+	}
+}
+
+// a binding response: its XOR-MAPPED-ADDRESS is our address seen from outside
+bool netplay_session::handle_stun(const udp::endpoint &from, const u8 *data, size_t size)
+{
+	auto const server = std::find_if(m_stun.begin(), m_stun.end(), [&from] (const stun_query &q) { return q.server == from; });
+	if (server == m_stun.end())
+		return false;
+	for (stun_query &q : m_stun)
+	{
+		if (q.done || from != q.server || size < 20 || get_u32be(data + 4) != STUN_COOKIE || !std::equal(q.id.begin(), q.id.end(), data + 8) || get_u16be(data) != 0x0101)
+			continue;
+		const size_t end = std::min<size_t>(size, 20 + get_u16be(data + 2));
+		for (size_t a = 20; a + 4 <= end; a += 4 + ((get_u16be(data + a + 2) + 3) & ~3))
+		{
+			const u16 type = get_u16be(data + a);
+			const u16 length = get_u16be(data + a + 2);
+			if ((type != 0x0020 && type != 0x0001) || length < 8 || a + 4 + length > end || data[a + 5] != 0x01)
+				continue;
+			const u16 x = type == 0x0020 ? u16(STUN_COOKIE >> 16) : 0;
+			const u32 y = type == 0x0020 ? STUN_COOKIE : 0;
+			q.mapped = udp::endpoint(asio::ip::address_v4(get_u32be(data + a + 8) ^ y), get_u16be(data + a + 6) ^ x);
+			q.done = true;
+			if (type == 0x0020)
+				break;
+		}
+		if (!q.done)
+			continue;
+
+		// the first answer gives the address; a second one that differs means
+		// that the router changes port for every destination
+		std::vector<udp::endpoint> seen;
+		for (const stun_query &o : m_stun)
+			if (o.done)
+				seen.push_back(o.mapped);
+		const std::string address = util::string_format("%s:%d", seen[0].address().to_string(), int(seen[0].port()));
+		if (seen.size() == 1)
+		{
+			osd_printf_info("Netplay: your address: %s\n", address);
+			if (m_host)
+				osd_printf_info("Netplay: send it to the other players, then paste here the addresses they get, one per line\n");
+			else
+				osd_printf_info("Netplay: send it to the host\n");
+			m_machine.popmessage("Netplay: your address is %s", address);
+		}
+		else if (seen.back() != seen[0])
+		{
+			osd_printf_info("Netplay: your router uses a different port for every destination (symmetric NAT): players outside your network will probably not reach you; use a VPN such as Tailscale\n");
+			m_stun_reported = true;
+		}
+		if (seen.size() == m_stun.size())
+			m_stun_reported = true;
+		return true;
+	}
+	return true;
+}
+
+void netplay_session::read_console()
+{
+	std::vector<std::string> lines;
+	{
+		std::lock_guard<std::mutex> guard(m_console->lock);
+		lines.swap(m_console->lines);
+	}
+	for (std::string &line : lines)
+	{
+		line = clean_address(line);
+		const auto colon = line.rfind(':');
+		asio::error_code ec;
+		const auto address = asio::ip::make_address_v4(line.substr(0, colon), ec);
+		const int port = colon == std::string::npos ? 0 : std::atoi(line.c_str() + colon + 1);
+		if (line.empty())
+			continue;
+		if (ec || port <= 0 || port > 65535)
+		{
+			osd_printf_info("Netplay: \"%s\" is not an address like 203.0.113.5:40000\n", line);
+			continue;
+		}
+		const udp::endpoint endpoint(address, u16(port));
+		if (std::find(m_punch.begin(), m_punch.end(), endpoint) == m_punch.end())
+		{
+			m_punch.push_back(endpoint);
+			osd_printf_info("Netplay: calling %s:%d\n", address.to_string(), port);
+		}
+	}
+}
+
+void netplay_session::punch_tick(u32 now)
+{
+	if (m_console)
+		read_console();
+	if (m_punch.empty() || now - m_punch_ms < PUNCH_MS)
+		return;
+	m_punch_ms = now;
+	packet_writer out(P_PUNCH, 0, 0);
+	for (const udp::endpoint &to : m_punch)
+	{
+		bool joined = false;
+		for (int p = 1; p < m_players; p++)
+			joined = joined || (m_peers[p].connected && m_peers[p].endpoint == to);
+		if (!joined)
+			send(to, out);
+	}
 }
 
 
@@ -1299,7 +1562,8 @@ void netplay_session::poll()
 		if (ec)
 			continue; // e.g. ICMP port unreachable from a peer that left
 		m_rx_bytes += size;
-		handle_packet(from, buffer, size);
+		if (!handle_stun(from, buffer, size))
+			handle_packet(from, buffer, size);
 		if (m_phase == phase::ENDED)
 			return;
 	}
@@ -1321,6 +1585,9 @@ void netplay_session::handle_packet(const udp::endpoint &from, const u8 *data, s
 			handle_hello(from, in);
 		return;
 	}
+	if (type == P_PUNCH)
+		return; // only there to open the sender's router
+
 	if (type == P_WELCOME || type == P_REJECT)
 	{
 		if (m_host || from != m_host_endpoint)
@@ -1369,11 +1636,13 @@ void netplay_session::handle_packet(const udp::endpoint &from, const u8 *data, s
 	case P_RESYNC:
 		if (m_host)
 		{
+			const s64 boundary = in.get<s32>();
 			const s64 frame = in.get<s32>();
-			if (in.ok() && frame <= m_cur + INPUT_RING / 2)
+			if (in.ok() && boundary <= m_cur + INPUT_RING / 2)
 			{
 				pr.resync_wanted = true;
-				pr.resync_frame = frame;
+				pr.resync_frame = boundary;
+				pr.resync_check = frame;
 				m_desyncs++;
 			}
 		}
@@ -1407,9 +1676,9 @@ void netplay_session::handle_hello(const udp::endpoint &from, packet_reader &in)
 	if (!in.ok() || m_phase != phase::LOBBY)
 		return;
 
-	const char *reason = nullptr;
+	std::string reason;
 	if (protocol != PROTOCOL || build != emulator_info::get_build_version())
-		reason = "different MAME build";
+		reason = util::string_format("different MAME build: the host has %s, you have %s", emulator_info::get_build_version(), build);
 	else if (system != m_machine.system().name)
 		reason = "different game";
 	else if (rom != m_rom_hash)
@@ -1423,7 +1692,7 @@ void netplay_session::handle_hello(const udp::endpoint &from, packet_reader &in)
 	for (int p = 1; p < m_players && player < 0; p++)
 		if (m_peers[p].connected && m_peers[p].endpoint == from)
 			player = p;
-	if (!reason && player < 0)
+	if (reason.empty() && player < 0)
 	{
 		for (int p = 1; p < m_players && player < 0; p++)
 			if (!m_peers[p].connected)
@@ -1438,7 +1707,7 @@ void netplay_session::handle_hello(const udp::endpoint &from, packet_reader &in)
 			osd_printf_info("Netplay: player %d joined from %s\n", player + 1, from.address().to_string());
 		}
 	}
-	if (reason)
+	if (!reason.empty())
 	{
 		packet_writer out(P_REJECT, 0, 0);
 		out.put_string(reason);

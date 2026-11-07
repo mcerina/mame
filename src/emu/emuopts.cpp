@@ -197,6 +197,7 @@ const options_entry emu_options::s_option_entries[] =
 	{ OPTION_NETPLAY_WINDOW,                             "10",        core_options::option_type::INTEGER,    "maximum frames to roll back (host)" },
 	{ OPTION_NETPLAY_HASH_EVERY,                         "30",        core_options::option_type::INTEGER,    "frames between desync checks (host)" },
 	{ OPTION_NETPLAY_EXCLUDE,                            "",          core_options::option_type::STRING,     "save state items left out of the desync check, separated by ; (host)" },
+	{ OPTION_NETPLAY_STUN,                               "stun.l.google.com:19302;stun.cloudflare.com:3478", core_options::option_type::STRING, "STUN servers that tell the public address, separated by ; (empty: none)" },
 
 	{ nullptr,                                           nullptr,     core_options::option_type::HEADER,     "CORE COMM OPTIONS" },
 	{ OPTION_COMM_LOCAL_HOST,                            "0.0.0.0",   core_options::option_type::STRING,     "local address to bind to" },
