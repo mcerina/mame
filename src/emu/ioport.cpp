@@ -10,6 +10,7 @@
 
 #include "emu.h"
 #include "rbtest.h"
+#include "netplay.h"
 
 #include "config.h"
 #include "emuopts.h"
@@ -2178,6 +2179,9 @@ void ioport_manager::frame_update()
 	rollback_tester *const rbtest = machine().rbtest();
 	if (rbtest)
 		rbtest->frame_inputs_begin();
+	netplay_manager *const netplay = machine().netplay();
+	if (netplay)
+		netplay->frame_inputs_begin();
 
 	// record/playback information about the current frame
 	attotime curtime = machine().time();
@@ -2205,6 +2209,8 @@ void ioport_manager::frame_update()
 		port.second->frame_update();
 		if (rbtest)
 			rbtest->frame_inputs_port(*port.second);
+		if (netplay)
+			netplay->frame_inputs_port(*port.second);
 
 		// handle playback/record
 		playback_port(*port.second.get());

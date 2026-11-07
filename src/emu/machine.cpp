@@ -10,6 +10,7 @@
 
 #include "emu.h"
 #include "rbtest.h"
+#include "netplay.h"
 
 #include "config.h"
 #include "crsshair.h"
@@ -423,6 +424,9 @@ int running_machine::run(bool quiet)
 		// rollback feasibility harness
 		m_rbtest = rollback_tester::create(*this);
 
+		// rollback netplay session
+		m_netplay = netplay_manager::create(*this);
+
 		// handle initial load
 		if (m_saveload_schedule != saveload_schedule::NONE)
 			handle_saveload();
@@ -445,6 +449,8 @@ int running_machine::run(bool quiet)
 				m_scheduler.timeslice();
 				if (m_rbtest)
 					m_rbtest->post_timeslice();
+				if (m_netplay)
+					m_netplay->post_timeslice();
 			}
 			// otherwise, just pump video updates and sound mapping updates through
 			else
@@ -797,14 +803,20 @@ void running_machine::rewind_invalidate()
 }
 
 
+bool running_machine::in_netplay_session() const
+{
+	return m_netplay && m_netplay->in_session();
+}
+
+
 //-------------------------------------------------
 //  pause - pause the system
 //-------------------------------------------------
 
 void running_machine::pause()
 {
-	// ignore if nothing has changed
-	if (m_paused)
+	// ignore if nothing has changed, or if the other players would be left waiting
+	if (m_paused || in_netplay_session())
 		return;
 	m_paused = true;
 

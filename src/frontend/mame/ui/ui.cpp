@@ -1755,10 +1755,13 @@ uint32_t mame_ui_manager::handler_ingame()
 		return 0;
 	}
 
+	// a netplay session has one timeline, shared by everybody
+	bool const netplay = machine().in_netplay_session();
+
 	// handle a reset request
-	if (inp.pressed(IPT_UI_RESET_MACHINE))
+	if (!netplay && inp.pressed(IPT_UI_RESET_MACHINE))
 		machine().schedule_hard_reset();
-	if (inp.pressed(IPT_UI_SOFT_RESET))
+	if (!netplay && inp.pressed(IPT_UI_SOFT_RESET))
 		machine().schedule_soft_reset();
 
 	// handle a request to display graphics/palette
@@ -1801,7 +1804,7 @@ uint32_t mame_ui_manager::handler_ingame()
 	}
 
 	// handle a save state request
-	if (inp.pressed(IPT_UI_SAVE_STATE))
+	if (!netplay && inp.pressed(IPT_UI_SAVE_STATE))
 	{
 		m_ui_target = &current_ui_target();
 		ui::menu::stack_push<ui::menu_save_state>(*this, *m_ui_target, true);
@@ -1810,7 +1813,7 @@ uint32_t mame_ui_manager::handler_ingame()
 	}
 
 	// handle a load state request
-	if (inp.pressed(IPT_UI_LOAD_STATE))
+	if (!netplay && inp.pressed(IPT_UI_LOAD_STATE))
 	{
 		m_ui_target = &current_ui_target();
 		ui::menu::stack_push<ui::menu_load_state>(*this, *m_ui_target, true);
@@ -1819,14 +1822,14 @@ uint32_t mame_ui_manager::handler_ingame()
 	}
 
 	// handle a quick save state request
-	if (inp.pressed(IPT_UI_SAVE_STATE_QUICK))
+	if (!netplay && inp.pressed(IPT_UI_SAVE_STATE_QUICK))
 	{
 		machine().schedule_save("quick");
 		return 0;
 	}
 
 	// handle a quick load state request
-	if (inp.pressed(IPT_UI_LOAD_STATE_QUICK))
+	if (!netplay && inp.pressed(IPT_UI_LOAD_STATE_QUICK))
 	{
 		machine().schedule_load("quick");
 		return 0;
@@ -1837,11 +1840,11 @@ uint32_t mame_ui_manager::handler_ingame()
 		machine().video().save_active_screen_snapshots();
 
 	// toggle pause
-	if (inp.pressed(IPT_UI_PAUSE))
+	if (!netplay && inp.pressed(IPT_UI_PAUSE))
 		machine().toggle_pause();
 
 	// pause single step
-	if (inp.pressed(IPT_UI_PAUSE_SINGLE))
+	if (!netplay && inp.pressed(IPT_UI_PAUSE_SINGLE))
 	{
 		machine().rewind_capture();
 		set_single_step(true);
@@ -1849,7 +1852,7 @@ uint32_t mame_ui_manager::handler_ingame()
 	}
 
 	// rewind single step
-	if (inp.pressed(IPT_UI_REWIND_SINGLE))
+	if (!netplay && inp.pressed(IPT_UI_REWIND_SINGLE))
 		machine().rewind_step();
 
 	// handle a toggle cheats request

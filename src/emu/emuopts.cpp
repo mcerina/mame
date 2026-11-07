@@ -189,6 +189,15 @@ const options_entry emu_options::s_option_entries[] =
 	{ OPTION_DEBUGLOG,                                   "0",         core_options::option_type::BOOLEAN,    "write debug console output to debug.log" },
 
 	// comm options
+	{ nullptr,                                           nullptr,     core_options::option_type::HEADER,     "CORE NETPLAY OPTIONS" },
+	{ OPTION_NETPLAY_HOST,                               "0",         core_options::option_type::INTEGER,    "host a rollback netplay session on this UDP port" },
+	{ OPTION_NETPLAY_JOIN,                               "",          core_options::option_type::STRING,     "join a rollback netplay session at host:port" },
+	{ OPTION_NETPLAY_PLAYERS,                            "2",         core_options::option_type::INTEGER,    "players in the session, 2 to 4 (host)" },
+	{ OPTION_NETPLAY_DELAY,                              "1",         core_options::option_type::INTEGER,    "frames of input delay (host)" },
+	{ OPTION_NETPLAY_WINDOW,                             "10",        core_options::option_type::INTEGER,    "maximum frames to roll back (host)" },
+	{ OPTION_NETPLAY_HASH_EVERY,                         "30",        core_options::option_type::INTEGER,    "frames between desync checks (host)" },
+	{ OPTION_NETPLAY_EXCLUDE,                            "",          core_options::option_type::STRING,     "save state items left out of the desync check, separated by ; (host)" },
+
 	{ nullptr,                                           nullptr,     core_options::option_type::HEADER,     "CORE COMM OPTIONS" },
 	{ OPTION_COMM_LOCAL_HOST,                            "0.0.0.0",   core_options::option_type::STRING,     "local address to bind to" },
 	{ OPTION_COMM_LOCAL_PORT,                            "15112",     core_options::option_type::STRING,     "local port to bind to" },

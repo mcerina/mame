@@ -178,6 +178,13 @@
 #define OPTION_RTC_TIME             "rtc"
 
 // core comm options
+#define OPTION_NETPLAY_HOST         "netplay_host"
+#define OPTION_NETPLAY_JOIN         "netplay_join"
+#define OPTION_NETPLAY_PLAYERS      "netplay_players"
+#define OPTION_NETPLAY_DELAY        "netplay_delay"
+#define OPTION_NETPLAY_WINDOW       "netplay_window"
+#define OPTION_NETPLAY_HASH_EVERY   "netplay_hash_every"
+#define OPTION_NETPLAY_EXCLUDE      "netplay_exclude"
 #define OPTION_COMM_LOCAL_HOST      "comm_localhost"
 #define OPTION_COMM_LOCAL_PORT      "comm_localport"
 #define OPTION_COMM_REMOTE_HOST     "comm_remotehost"
@@ -461,6 +468,13 @@ public:
 	const char *rtc_time() const { return value(OPTION_RTC_TIME); }
 
 	// core comm options
+	int netplay_host_port() const { return int_value(OPTION_NETPLAY_HOST); }
+	const char *netplay_join() const { return value(OPTION_NETPLAY_JOIN); }
+	int netplay_players() const { return int_value(OPTION_NETPLAY_PLAYERS); }
+	int netplay_delay() const { return int_value(OPTION_NETPLAY_DELAY); }
+	int netplay_window() const { return int_value(OPTION_NETPLAY_WINDOW); }
+	int netplay_hash_every() const { return int_value(OPTION_NETPLAY_HASH_EVERY); }
+	const char *netplay_exclude() const { return value(OPTION_NETPLAY_EXCLUDE); }
 	const char *comm_localhost() const { return value(OPTION_COMM_LOCAL_HOST); }
 	const char *comm_localport() const { return value(OPTION_COMM_LOCAL_PORT); }
 	const char *comm_remotehost() const { return value(OPTION_COMM_REMOTE_HOST); }

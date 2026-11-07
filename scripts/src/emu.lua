@@ -33,6 +33,7 @@ includedirs {
 
 includedirs {
 	ext_includedir("asio"),
+	ext_includedir("zstd"),
 	ext_includedir("expat"),
 	ext_includedir("zlib"),
 	ext_includedir("flac"),
@@ -231,6 +232,8 @@ files {
 	MAME_DIR .. "src/emu/video.cpp",
 	MAME_DIR .. "src/emu/rbtest.cpp",
 	MAME_DIR .. "src/emu/rbtest.h",
+	MAME_DIR .. "src/emu/netplay.cpp",
+	MAME_DIR .. "src/emu/netplay.h",
 	MAME_DIR .. "src/emu/video.h",
 	MAME_DIR .. "src/emu/xtal.cpp",
 	MAME_DIR .. "src/emu/xtal.h",

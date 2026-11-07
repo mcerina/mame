@@ -97,6 +97,7 @@ typedef delegate<void ()> machine_notify_delegate;
 
 // description of the currently-running machine
 class rollback_tester;
+class netplay_manager;
 
 class running_machine
 {
@@ -144,6 +145,10 @@ public:
 	natural_keyboard &natkeyboard() noexcept { assert(m_natkeyboard != nullptr); return *m_natkeyboard; }
 	machine_phase phase() const { return m_current_phase; }
 	rollback_tester *rbtest() const { return m_rbtest.get(); }
+	netplay_manager *netplay() const { return m_netplay.get(); }
+	bool in_netplay_session() const;
+	time_t base_time() const { return m_base_time; }
+	void set_base_time(time_t time) { m_base_time = time; }
 	bool paused() const { return m_paused || (m_current_phase != machine_phase::RUNNING); }
 	bool exit_pending() const { return m_exit_pending; }
 	bool hard_reset_pending() const { return m_hard_reset_pending; }
@@ -349,6 +354,7 @@ private:
 	parameters_manager      m_parameters;           // parameters manager
 	device_scheduler        m_scheduler;            // scheduler object
 	std::unique_ptr<rollback_tester> m_rbtest;      // rollback feasibility harness (MAME_RBTEST)
+	std::unique_ptr<netplay_manager> m_netplay;     // rollback netplay session (-netplay_host, -netplay_join)
 
 	// string formatting buffer
 	mutable util::ovectorstream m_string_buffer;
