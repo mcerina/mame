@@ -47,7 +47,6 @@ void sh_common_execution::device_start()
 	save_item(NAME(m_sh2_state->mach));
 	save_item(NAME(m_sh2_state->macl));
 	save_item(NAME(m_sh2_state->r));
-	save_item(NAME(m_sh2_state->ea));
 	save_item(NAME(m_sh2_state->m_delay));
 	save_item(NAME(m_sh2_state->pending_irq));
 	save_item(NAME(m_sh2_state->pending_nmi));
