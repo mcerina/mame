@@ -75,6 +75,7 @@ rollback_tester::rollback_tester(running_machine &machine, const std::string &co
 		else if (k == "frames") m_frames = std::stoll(v);
 		else if (k == "out") m_out = v;
 		else if (k == "dump") m_dump.push_back(std::stoll(v));
+		else if (k == "dump_after") m_dump_after = std::stoll(v);
 		else if (k == "profile") m_profile = std::stoi(v);
 		else if (k == "snap") m_snap.push_back(std::stoll(v));
 		else if (k == "exclude") { std::istringstream es(v); std::string e; while (std::getline(es, e, ';')) if (!e.empty()) m_exclude.push_back(e); }
@@ -491,7 +492,7 @@ void rollback_tester::sync_test(s64 b)
 	{
 		if (before_save)
 		{
-			if (!m_st_dumped)
+			if (!m_st_dumped && f >= m_dump_after)
 				first_pass = slot_for(f).data;
 			return;
 		}
@@ -506,7 +507,7 @@ void rollback_tester::sync_test(s64 b)
 		m_st_mismatch++;
 		if (m_stlog)
 			std::fprintf(m_stlog, "frame %lld differs after reload of %lld (boundary %lld)\n", (long long)f, (long long)j, (long long)b);
-		if (!m_st_dumped)
+		if (!m_st_dumped && f >= m_dump_after)
 		{
 			m_st_dumped = true;
 			dump_state(first_pass, util::string_format(".stA.%lld.state", (long long)f));

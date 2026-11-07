@@ -123,6 +123,7 @@ private:
 	void tap_frame_start();
 	std::vector<std::string> m_exclude; // extra video-derived save items (substring match), driver specific
 	int m_profile = 0;
+	s64 m_dump_after = 0;                     // sync test: dump the first mismatch from this frame on
 	unsigned m_fieldcount = 0;
 	frame_record *m_prep = nullptr;
 	bool m_keep_other = false;
