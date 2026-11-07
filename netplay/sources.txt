@@ -1,12 +1,8 @@
-src/mame/alpha/alpha68k.cpp
 src/mame/atari/atarig1.cpp
-src/mame/atari/blstroid.cpp
-src/mame/atari/eprom.cpp
 src/mame/atari/gauntlet.cpp
 src/mame/atari/xybots.cpp
 src/mame/atlus/cave.cpp
 src/mame/bally/astrocde.cpp
-src/mame/bally/gridlee.cpp
 src/mame/bally/mcr.cpp
 src/mame/bally/mcr3.cpp
 src/mame/capcom/1943.cpp
@@ -24,13 +20,11 @@ src/mame/dataeast/cninja.cpp
 src/mame/dataeast/darkseal.cpp
 src/mame/dataeast/dassault.cpp
 src/mame/dataeast/dec0.cpp
-src/mame/dataeast/dragngun.cpp
 src/mame/dataeast/fghthist.cpp
 src/mame/dataeast/ghostb.cpp
 src/mame/dataeast/rohga.cpp
 src/mame/dataeast/simpl156.cpp
 src/mame/dataeast/supbtime.cpp
-src/mame/exidy/exidy.cpp
 src/mame/gaelco/gaelco.cpp
 src/mame/igs/pgm.cpp
 src/mame/irem/m107.cpp
@@ -68,9 +62,6 @@ src/mame/psikyo/psikyo.cpp
 src/mame/psikyo/psikyosh.cpp
 src/mame/rare/btoads.cpp
 src/mame/sega/segas16a.cpp
-src/mame/sega/segas16b.cpp
-src/mame/sega/segas32.cpp
-src/mame/sega/segaybd.cpp
 src/mame/seibu/bloodbro.cpp
 src/mame/seibu/cabal.cpp
 src/mame/seibu/raiden.cpp
@@ -88,7 +79,6 @@ src/mame/taito/ninjaw.cpp
 src/mame/taito/taito_b.cpp
 src/mame/taito/taito_f2.cpp
 src/mame/taito/taito_x.cpp
-src/mame/taito/taito_z.cpp
 src/mame/taito/warriorb.cpp
 src/mame/technos/chinagat.cpp
 src/mame/technos/ddragon.cpp
@@ -106,7 +96,6 @@ src/mame/toaplan/raizing.cpp
 src/mame/toaplan/raizing_batrider.cpp
 src/mame/toaplan/snowbro2.cpp
 src/mame/unico/silkroad.cpp
-src/mame/videogames/supertnk.cpp
 src/mame/vsystem/aerofgt.cpp
 src/mame/vsystem/pspikes.cpp
 src/mame/williams/midtunit.cpp
