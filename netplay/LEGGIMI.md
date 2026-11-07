@@ -51,7 +51,7 @@ Le ROM non sono incluse. Metti lo zip del gioco, per esempio `ffight.zip`, nella
 ./np -verifyroms ffight -rompath ~/mame-roms
 ```
 
-Deve rispondere `romset ffight is good`. Se il gioco ha un "parent", serve anche il suo zip.
+Deve rispondere `romset ffight is good`, oppure `best available`, che per alcuni giochi è il massimo possibile. Alcuni giochi chiedono anche lo zip di un BIOS o di un chip, per esempio `neogeo.zip` o `qsound_hle.zip` per `dino`: se manca, `-verifyroms` dice quale.
 
 ## 4. Unirsi a una partita
 
